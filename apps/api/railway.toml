@@ -1,13 +1,12 @@
-# Nebula API — Railway service configuration (monorepo)
-# REQUIRED: Railway Root Directory = repository root (/.)
-# REQUIRED: Config path = apps/api/railway.toml
-# REQUIRED: nixpacks.toml at repo root (or apps/api/nixpacks.toml) — forces pnpm, never npm install
+# Nebula API — Railway config-as-code (schema: https://railway.com/railway.schema.json)
+# Dashboard: Root Directory = / (repo root)
+# Dashboard: Config file path = /apps/api/railway.toml
 
 [build]
-builder = "nixpacks"
-# pnpm install runs in nixpacks [phases.install]; build only compiles packages
+builder = "NIXPACKS"
+nixpacksConfigPath = "nixpacks.toml"
 buildCommand = "pnpm --filter @nebula/database generate && pnpm --filter @nebula/api build"
-watchPatterns = ["/apps/api/**", "/packages/**"]
+watchPatterns = ["apps/api/**", "packages/**", "nixpacks.toml", "pnpm-lock.yaml"]
 
 [deploy]
 startCommand = "sh apps/api/scripts/railway-start.sh"
