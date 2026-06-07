@@ -37,10 +37,15 @@ export class AuthService {
   async login(input: LoginInput) {
     const user = await prisma.user.findUnique({
       where: { email: input.email.toLowerCase() },
+      include: { subscription: true },
     });
 
     if (!user || !(await verifyPassword(input.password, user.passwordHash))) {
       throw new AuthError("INVALID_CREDENTIALS", "Invalid email or password", 401);
+    }
+
+    if (user.subscription?.status === "cancelled") {
+      throw new AuthError("ACCOUNT_SUSPENDED", "Account suspended", 403);
     }
 
     return this.createSession(user.id);
@@ -76,13 +81,20 @@ export class AuthService {
   async validateSession(sessionId: string) {
     const session = await prisma.userSession.findUnique({
       where: { id: sessionId },
-      include: { user: true },
+      include: {
+        user: { include: { subscription: true } },
+      },
     });
 
     if (!session || session.expiresAt < new Date()) {
       if (session) {
         await prisma.userSession.delete({ where: { id: sessionId } });
       }
+      return null;
+    }
+
+    if (session.user.subscription?.status === "cancelled") {
+      await prisma.userSession.delete({ where: { id: sessionId } });
       return null;
     }
 

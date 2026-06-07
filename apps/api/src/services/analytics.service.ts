@@ -16,6 +16,7 @@ export const PlatformMetricEvents = {
   PREVIEW_EXPIRED: "preview_expired",
   PREVIEW_ORPHAN_RECONCILED: "preview_orphan_reconciled",
   PREVIEW_UNHEALTHY: "preview_unhealthy",
+  USER_UPGRADED: "user_upgraded",
 } as const;
 
 export type WorkspaceMetricEvent =

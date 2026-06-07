@@ -85,9 +85,14 @@ export default function AdminAnalyticsPage() {
             <h1 className="text-2xl font-bold text-white">Build Analytics</h1>
             <p className="text-sm text-gray-500">Admin — builder runs & workspace metrics</p>
           </div>
-          <Link href="/projects" className="text-sm text-nebula-400 hover:underline">
-            Projects
-          </Link>
+          <div className="flex gap-4">
+            <Link href="/admin" className="text-sm text-nebula-400 hover:underline">
+              Admin dashboard
+            </Link>
+            <Link href="/projects" className="text-sm text-nebula-400 hover:underline">
+              Projects
+            </Link>
+          </div>
         </div>
 
         <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">

@@ -342,6 +342,168 @@ export class ApiClient {
       };
     }>("/admin/analytics/builds");
   }
+
+  getAdminOverview() {
+    return this.request<{
+      data: {
+        totalUsers: number;
+        totalProjects: number;
+        readyProjects: number;
+        failedProjects: number;
+        activePreviews: number;
+        githubExports: number;
+        estimatedAiCostUsd: number;
+      };
+    }>("/admin/dashboard/overview");
+  }
+
+  getAdminUsers() {
+    return this.request<{
+      data: Array<{
+        id: string;
+        name: string;
+        email: string;
+        plan: string;
+        projectsCount: number;
+        buildsUsed: number;
+        buildsLimit: number;
+        status: string;
+        createdAt: string;
+      }>;
+    }>("/admin/users");
+  }
+
+  suspendUser(userId: string) {
+    return this.request<{ data: { ok: boolean } }>(
+      `/admin/users/${userId}/suspend`,
+      { method: "POST" }
+    );
+  }
+
+  reactivateUser(userId: string) {
+    return this.request<{ data: { ok: boolean } }>(
+      `/admin/users/${userId}/reactivate`,
+      { method: "POST" }
+    );
+  }
+
+  upgradeUserToPro(userId: string) {
+    return this.request<{ data: { ok: boolean } }>(
+      `/admin/users/${userId}/upgrade-pro`,
+      { method: "POST" }
+    );
+  }
+
+  resetUserBuildLimits(userId: string) {
+    return this.request<{ data: { ok: boolean } }>(
+      `/admin/users/${userId}/reset-build-limits`,
+      { method: "POST" }
+    );
+  }
+
+  getAdminBuilds(status: "ready" | "failed" | "building" | "all" = "all") {
+    const q = status === "all" ? "" : `?status=${status}`;
+    return this.request<{
+      data: Array<{
+        id: string;
+        userName: string;
+        userEmail: string;
+        projectName: string;
+        projectStatus: string;
+        provider: string;
+        status: string;
+        durationMs: number | null;
+        tokensInput: number;
+        tokensOutput: number;
+        estimatedCostUsd: number | null;
+        createdAt: string;
+      }>;
+    }>(`/admin/builds${q}`);
+  }
+
+  getAdminPreviews() {
+    return this.request<{
+      data: Array<{
+        id: string;
+        projectId: string;
+        projectName: string;
+        userName: string;
+        userEmail: string;
+        status: string;
+        sandboxId: string | null;
+        estimatedCostUsd: number | null;
+        expiresAt: string | null;
+      }>;
+    }>("/admin/previews");
+  }
+
+  stopAdminPreview(projectId: string) {
+    return this.request<{ data: { ok: boolean } }>(
+      `/admin/previews/${projectId}/stop`,
+      { method: "POST" }
+    );
+  }
+
+  deleteAdminPreview(projectId: string) {
+    return this.request<{ data: { ok: boolean } }>(
+      `/admin/previews/${projectId}`,
+      { method: "DELETE" }
+    );
+  }
+
+  getAdminAiAnalytics() {
+    return this.request<{
+      data: {
+        daily: Array<{
+          date: string;
+          builds: number;
+          successful: number;
+          failed: number;
+          tokensInput: number;
+          tokensOutput: number;
+          costUsd: number;
+          successRate: number;
+        }>;
+        summary: {
+          totalBuilds: number;
+          successRate: number;
+          totalTokensInput: number;
+          totalTokensOutput: number;
+          totalCostUsd: number;
+        };
+      };
+    }>("/admin/ai-analytics");
+  }
+
+  getAdminHealth() {
+    return this.request<{
+      data: {
+        database: boolean;
+        supabase: {
+          configured: boolean;
+          database: boolean;
+          auth: boolean;
+          storage: boolean;
+        };
+        deepseek: { configured: boolean; active: boolean; provider: string };
+        github: { configured: boolean; dedicatedEncryptionKey: boolean };
+        e2b: { configured: boolean; template: string };
+      };
+    }>("/admin/health");
+  }
+
+  getAdminAuditLogs() {
+    return this.request<{
+      data: Array<{
+        id: string;
+        type: string;
+        message: string;
+        userEmail: string | null;
+        projectName: string | null;
+        createdAt: string;
+      }>;
+    }>("/admin/audit-logs");
+  }
 }
 
 export const api = new ApiClient();
