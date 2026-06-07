@@ -29,6 +29,8 @@ const rootPkg = read("package.json");
 const apiPkg = read("apps/api/package.json");
 const sharedPkg = read("packages/shared/package.json");
 const sharedTsconfig = read("packages/shared/tsconfig.json");
+const databasePkg = read("packages/database/package.json");
+const databaseTsconfig = read("packages/database/tsconfig.json");
 
 check("railway.toml exists", railwayToml.includes("[build]"));
 check("build: database generate", railwayToml.includes("@nebula/database generate"));
@@ -55,7 +57,12 @@ check("root packageManager pnpm", rootPkg.includes('"packageManager": "pnpm@9.15
 check("pnpm-workspace.yaml exists", read("pnpm-workspace.yaml").includes("apps/*"));
 check("api uses workspace deps", apiPkg.includes('"@nebula/database": "workspace:*"'));
 check("api uses workspace shared", apiPkg.includes('"@nebula/shared": "workspace:*"'));
+check("api build runs database generate", apiPkg.includes("@nebula/database generate"));
+check("api build runs database build", apiPkg.includes("@nebula/database build"));
 check("api build depends on shared build", apiPkg.includes("@nebula/shared build"));
+check("database main points to dist", databasePkg.includes('"main": "./dist/index.js"'));
+check("database has build script", databasePkg.includes('"build": "tsc"'));
+check("database compiles to CommonJS", databaseTsconfig.includes('"module": "CommonJS"'));
 check("shared main points to dist", sharedPkg.includes('"main": "./dist/index.js"'));
 check("shared has build script", sharedPkg.includes('"build": "tsc"'));
 check("shared compiles to CommonJS", sharedTsconfig.includes('"module": "CommonJS"'));
