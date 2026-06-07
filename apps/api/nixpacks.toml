@@ -1,0 +1,18 @@
+# Mirror of repo-root nixpacks.toml for Railway services whose config path is apps/api/railway.toml.
+# Root Directory in Railway dashboard MUST still be the repository root.
+
+providers = ["node"]
+
+[variables]
+NIXPACKS_NODE_VERSION = "20"
+
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+
+[phases.install]
+dependsOn = ["setup"]
+cmds = [
+  "corepack enable",
+  "corepack prepare pnpm@9.15.0 --activate",
+  "pnpm install --frozen-lockfile",
+]

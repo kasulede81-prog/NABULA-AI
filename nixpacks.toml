@@ -1,8 +1,21 @@
-# Nixpacks — pnpm monorepo (API service on Railway)
-# Node 20 matches package.json engines
+# Nebula monorepo — force pnpm via Corepack; never npm install for dependencies.
+# Railway service Root Directory MUST be the repository root (not apps/api).
+# workspace:* protocol requires pnpm and pnpm-lock.yaml at repo root.
 
-[phases.setup]
-nixPkgs = ["nodejs_20", "pnpm"]
+providers = ["node"]
 
 [variables]
 NIXPACKS_NODE_VERSION = "20"
+
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+
+[phases.install]
+dependsOn = ["setup"]
+cmds = [
+  "corepack enable",
+  "corepack prepare pnpm@9.15.0 --activate",
+  "pnpm install --frozen-lockfile",
+]
+
+# Build steps run via apps/api/railway.toml buildCommand after install.

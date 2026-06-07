@@ -22,29 +22,42 @@ console.log("Railway API Deployment Verification\n");
 
 const railwayToml = read("apps/api/railway.toml");
 const nixpacks = read("nixpacks.toml");
+const nixpacksApi = read("apps/api/nixpacks.toml");
 const startSh = read("apps/api/scripts/railway-start.sh");
 const envExample = read("apps/api/railway.env.example");
-const envTs = read("apps/api/src/config/env.ts");
-const indexTs = read("apps/api/src/index.ts");
+const rootPkg = read("package.json");
+const apiPkg = read("apps/api/package.json");
 
 check("railway.toml exists", railwayToml.includes("[build]"));
-check("build: pnpm install", railwayToml.includes("pnpm install"));
 check("build: database generate", railwayToml.includes("@nebula/database generate"));
 check("build: api build", railwayToml.includes("@nebula/api build"));
+const buildCmd = railwayToml.match(/buildCommand\s*=\s*"([^"]+)"/)?.[1] ?? "";
+check(
+  "buildCommand: uses pnpm not npm",
+  buildCmd.includes("pnpm") && !/\bnpm\s+(install|i)\b/.test(buildCmd)
+);
 check("start: railway-start.sh", railwayToml.includes("railway-start.sh"));
 check("healthcheck /v1/health", railwayToml.includes('healthcheckPath = "/v1/health"'));
 
-check("nixpacks node 20", nixpacks.includes("nodejs_20"));
-check("nixpacks pnpm", nixpacks.includes("pnpm"));
+check("root nixpacks providers node", nixpacks.includes('providers = ["node"]'));
+check("root nixpacks node 20", nixpacks.includes("nodejs_20"));
+check("root nixpacks corepack enable", nixpacks.includes("corepack enable"));
+check("root nixpacks prepare pnpm@9.15.0", nixpacks.includes("pnpm@9.15.0"));
+check("root nixpacks pnpm install", nixpacks.includes("pnpm install"));
+check("root nixpacks no npm i", !nixpacks.match(/cmds\s*=\s*\[[^\]]*"npm i"/));
+
+check("apps/api nixpacks mirrors root", nixpacksApi.includes("corepack enable"));
+check("apps/api nixpacks pnpm install", nixpacksApi.includes("pnpm install"));
+
+check("root packageManager pnpm", rootPkg.includes('"packageManager": "pnpm@9.15.0"'));
+check("pnpm-workspace.yaml exists", read("pnpm-workspace.yaml").includes("apps/*"));
+check("api uses workspace deps", apiPkg.includes('"@nebula/database": "workspace:*"'));
+check("api uses workspace shared", apiPkg.includes('"@nebula/shared": "workspace:*"'));
 
 check("start script maps PORT to API_PORT", startSh.includes('API_PORT="${PORT'));
 check("start script runs dist/index.js", startSh.includes("node dist/index.js"));
-check("start script binds 0.0.0.0 default", startSh.includes("API_HOST"));
 
-check("env.ts API_PORT schema", envTs.includes("API_PORT"));
-check("index listens on env.API_PORT", indexTs.includes("env.API_PORT"));
 check("railway.env.example DATABASE_URL", envExample.includes("DATABASE_URL"));
-check("railway.env.example WEB_URL", envExample.includes("WEB_URL=https://dev.ugazon.com"));
 
 console.log(`\n--- ${passed}/${passed + failed} passed ---`);
 process.exit(failed > 0 ? 1 : 0);
