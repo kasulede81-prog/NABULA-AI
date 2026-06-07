@@ -1,9 +1,11 @@
 import { buildApp } from "./app";
 import { env } from "./config/env";
 import { logAgentReadinessWarning } from "./config/agent-readiness";
+import { assertSupabaseServerConfig } from "./config/supabase-readiness";
 import { previewLifecycleService } from "./services/preview-lifecycle.service";
 
 async function main() {
+  assertSupabaseServerConfig();
   logAgentReadinessWarning();
   const app = await buildApp();
   previewLifecycleService.start();

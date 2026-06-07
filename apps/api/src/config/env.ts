@@ -1,13 +1,34 @@
 import path from "path";
 import { config } from "dotenv";
 import { z } from "zod";
+import {
+  DEFAULT_SUPABASE_STORAGE_BUCKET,
+  NEBULA_PRODUCTION_AUTH_CALLBACK,
+  NEBULA_PRODUCTION_SITE_URL,
+  SupabaseEnvKeys,
+  getSupabaseServerConfig,
+} from "@nebula/shared";
 
 config({ path: path.resolve(process.cwd(), "../../.env"), override: true });
 config({ path: path.resolve(process.cwd(), ".env"), override: true });
 
 const envSchema = z.object({
   DATABASE_URL: z.string().url(),
-  DIRECT_URL: z.string().url().optional(),
+  DIRECT_URL: z.string().url(),
+  NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+  NEXT_PUBLIC_SITE_URL: z.string().url().default(NEBULA_PRODUCTION_SITE_URL),
+  SUPABASE_AUTH_REDIRECT_URL: z
+    .string()
+    .url()
+    .default(NEBULA_PRODUCTION_AUTH_CALLBACK),
+  SUPABASE_STORAGE_BUCKET: z
+    .string()
+    .min(1)
+    .default(DEFAULT_SUPABASE_STORAGE_BUCKET),
+  SUPABASE_AUTH_GOOGLE_ENABLED: z.enum(["true", "false"]).default("false"),
+  SUPABASE_AUTH_GITHUB_ENABLED: z.enum(["true", "false"]).default("false"),
   JWT_SECRET: z.string().min(32),
   API_PORT: z.coerce.number().default(3001),
   API_HOST: z.string().default("0.0.0.0"),
@@ -27,4 +48,26 @@ const envSchema = z.object({
   ADMIN_EMAILS: z.string().default(""),
 });
 
-export const env = envSchema.parse(process.env);
+const parsed = envSchema.safeParse(process.env);
+
+if (!parsed.success) {
+  const missing = parsed.error.errors
+    .map((e) => `${e.path.join(".")}: ${e.message}`)
+    .join("\n  ");
+  console.error(`[nebula] API environment validation failed:\n  ${missing}`);
+  process.exit(1);
+}
+
+try {
+  getSupabaseServerConfig(process.env);
+} catch (err) {
+  console.error(
+    `[nebula] Supabase configuration failed: ${err instanceof Error ? err.message : err}`
+  );
+  process.exit(1);
+}
+
+export const env = parsed.data;
+
+/** Typed Supabase accessors (re-export keys for discoverability). */
+export { SupabaseEnvKeys };

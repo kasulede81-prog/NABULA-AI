@@ -7,5 +7,6 @@ export * from "./validation/build-validation";
 export * from "./validation/build-manifest";
 export * from "./constants/events";
 export * from "./constants/llm-cost";
+export * from "./config/supabase";
 export * from "./types/llm";
 export * from "./errors/agent-errors";
