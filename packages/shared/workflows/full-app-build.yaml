@@ -1,0 +1,99 @@
+# Nebula AI — Full Application Build Workflow
+# Canonical pipeline for "Build an X" prompts
+
+id: full-app-build
+version: 2
+description: Complete application generation from plain-English prompt
+
+nodes:
+  - id: requirements
+    type: agent
+    agent: requirements
+    on:
+      completed: planning
+      needs_clarification: requirements  # self-loop via human gate
+    gate:
+      type: human_if
+      condition: open_questions_unresolved
+
+  - id: planning
+    type: agent
+    agent: planning
+    needs: [requirements]
+    on:
+      completed: architecture
+
+  - id: architecture
+    type: agent
+    agent: architecture
+    needs: [planning]
+    on:
+      completed: [ui, backend, database]
+
+  - id: ui
+    type: agent
+    agent: ui_generation
+    needs: [architecture]
+    parallel: true
+
+  - id: backend
+    type: agent
+    agent: backend_generation
+    needs: [architecture]
+    parallel: true
+
+  - id: database
+    type: agent
+    agent: database
+    needs: [architecture]
+    parallel: true
+
+  - id: integration_build
+    type: sandbox
+    action: build
+    needs: [ui, backend, database]
+    on:
+      success: testing
+      failure: refactoring
+
+  - id: testing
+    type: agent
+    agent: testing
+    needs: [integration_build]
+    on:
+      completed: review
+
+  - id: refactoring
+    type: agent
+    agent: refactoring
+    needs: [integration_build]
+    max_cycles: 3
+    on:
+      completed: integration_build
+
+  - id: review
+    type: agent
+    agent: review
+    needs: [testing]
+    on:
+      passed: github
+      failed: refactoring
+
+  - id: github
+    type: agent
+    agent: github
+    needs: [review]
+    on:
+      completed: deployment
+
+  - id: deployment
+    type: agent
+    agent: deployment
+    needs: [github]
+    on:
+      completed: preview
+
+  - id: preview
+    type: sandbox
+    action: preview_deploy
+    needs: [deployment]

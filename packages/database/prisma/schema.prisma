@@ -1,0 +1,225 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum ProjectStatus {
+  draft
+  clarifying
+  building
+  ready
+  failed
+}
+
+enum MessageRole {
+  user
+  assistant
+  system
+}
+
+enum AgentType {
+  clarifier
+  builder
+}
+
+enum AgentRunStatus {
+  running
+  completed
+  failed
+}
+
+enum PreviewStatus {
+  starting
+  ready
+  stopped
+  error
+}
+
+enum PlanTier {
+  free
+  starter
+  pro
+}
+
+enum SubscriptionStatus {
+  active
+  cancelled
+  past_due
+  trialing
+}
+
+model User {
+  id               String            @id @default(uuid()) @db.Uuid
+  email            String            @unique
+  passwordHash     String            @map("password_hash")
+  name             String
+  stripeCustomerId String?           @map("stripe_customer_id")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  sessions         UserSession[]
+  subscription     Subscription?
+  projects         Project[]
+  agentRuns        AgentRun[]
+  githubConnection GithubConnection?
+  analyticsEvents  AnalyticsEvent[]
+
+  @@map("users")
+}
+
+model GithubConnection {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @unique @map("user_id") @db.Uuid
+  tokenEnc  String   @map("token_enc")
+  username  String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("github_connections")
+}
+
+model UserSession {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  tokenHash String   @unique @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_sessions")
+}
+
+model Subscription {
+  id                     String             @id @default(uuid()) @db.Uuid
+  userId                 String             @unique @map("user_id") @db.Uuid
+  stripeSubscriptionId   String?            @map("stripe_subscription_id")
+  plan                   PlanTier           @default(free)
+  status                 SubscriptionStatus @default(active)
+  buildsUsedThisPeriod   Int                @default(0) @map("builds_used_this_period")
+  buildsLimit            Int                @default(3) @map("builds_limit")
+  currentPeriodEnd       DateTime?          @map("current_period_end")
+  createdAt              DateTime           @default(now()) @map("created_at")
+  updatedAt              DateTime           @updatedAt @map("updated_at")
+  user                   User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model Project {
+  id         String        @id @default(uuid()) @db.Uuid
+  userId     String        @map("user_id") @db.Uuid
+  name       String
+  slug       String
+  prompt     String
+  status     ProjectStatus @default(draft)
+  specJson   Json?         @map("spec_json")
+  previewUrl           String?   @map("preview_url")
+  githubRepoUrl        String?   @map("github_repo_url")
+  githubRepoFullName   String?   @map("github_repo_full_name")
+  githubExportedAt     DateTime? @map("github_exported_at")
+  buildCount           Int       @default(0) @map("build_count")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages   Message[]
+  files      File[]
+  agentRuns        AgentRun[]
+  preview          Preview?
+  analyticsEvents  AnalyticsEvent[]
+
+  @@unique([userId, slug])
+  @@index([userId])
+  @@map("projects")
+}
+
+model Message {
+  id        String      @id @default(uuid()) @db.Uuid
+  projectId String      @map("project_id") @db.Uuid
+  role      MessageRole
+  content   String
+  createdAt DateTime    @default(now()) @map("created_at")
+  project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+  @@map("messages")
+}
+
+model File {
+  id        String   @id @default(uuid()) @db.Uuid
+  projectId String   @map("project_id") @db.Uuid
+  path      String
+  content   String
+  version   Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, path])
+  @@index([projectId, path])
+  @@map("files")
+}
+
+model AgentRun {
+  id            String         @id @default(uuid()) @db.Uuid
+  projectId     String         @map("project_id") @db.Uuid
+  userId        String         @map("user_id") @db.Uuid
+  agentType     AgentType      @map("agent_type")
+  status        AgentRunStatus @default(running)
+  inputPrompt   String         @map("input_prompt")
+  outputSummary String?        @map("output_summary")
+  tokensInput      Int            @default(0) @map("tokens_input")
+  tokensOutput     Int            @default(0) @map("tokens_output")
+  toolCalls        Int?           @map("tool_calls")
+  filesGenerated   Int?           @map("files_generated")
+  buildDurationMs  Int?           @map("build_duration_ms")
+  errorCode        String?        @map("error_code")
+  failurePhase     String?        @map("failure_phase")
+  retryCount       Int?           @map("retry_count")
+  errorMessage       String?        @map("error_message")
+  llmProvider        String?        @map("llm_provider")
+  estimatedCostUsd   Float?         @map("estimated_cost_usd")
+  startedAt          DateTime       @default(now()) @map("started_at")
+  completedAt        DateTime?      @map("completed_at")
+  createdAt          DateTime       @default(now()) @map("created_at")
+  project            Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt(sort: Desc)])
+  @@index([agentType, status])
+  @@map("agent_runs")
+}
+
+model AnalyticsEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  eventType String   @map("event_type")
+  userId    String?  @map("user_id") @db.Uuid
+  projectId String?  @map("project_id") @db.Uuid
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([eventType, createdAt])
+  @@map("analytics_events")
+}
+
+model Preview {
+  id               String        @id @default(uuid()) @db.Uuid
+  projectId        String        @unique @map("project_id") @db.Uuid
+  sandboxId        String?       @map("sandbox_id")
+  url              String?
+  status           PreviewStatus @default(starting)
+  expiresAt        DateTime?     @map("expires_at")
+  startedAt        DateTime?     @map("started_at")
+  estimatedCostUsd Float?        @map("estimated_cost_usd")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+  project          Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([status, expiresAt])
+  @@map("previews")
+}
