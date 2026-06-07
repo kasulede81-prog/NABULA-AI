@@ -1,0 +1,8 @@
+# Nixpacks — pnpm monorepo (API service on Railway)
+# Node 20 matches package.json engines
+
+[phases.setup]
+nixPkgs = ["nodejs_20", "pnpm"]
+
+[variables]
+NIXPACKS_NODE_VERSION = "20"

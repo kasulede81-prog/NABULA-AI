@@ -1,0 +1,14 @@
+# Nebula API — Railway service configuration (monorepo)
+# Dashboard: set Repository root to repo root; Config path = apps/api/railway.toml
+
+[build]
+builder = "nixpacks"
+buildCommand = "pnpm install && pnpm --filter @nebula/database generate && pnpm --filter @nebula/api build"
+watchPatterns = ["/apps/api/**", "/packages/**"]
+
+[deploy]
+startCommand = "sh apps/api/scripts/railway-start.sh"
+healthcheckPath = "/v1/health"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
