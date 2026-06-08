@@ -25,6 +25,9 @@ export const SseEvents = {
   GITHUB_EXPORT_STARTED: "github.export.started",
   GITHUB_EXPORT_COMPLETED: "github.export.completed",
   GITHUB_EXPORT_FAILED: "github.export.failed",
+  GITHUB_SYNC_STARTED: "github.sync.started",
+  GITHUB_SYNC_COMPLETED: "github.sync.completed",
+  GITHUB_SYNC_FAILED: "github.sync.failed",
 } as const;
 
 export type SseEventType = (typeof SseEvents)[keyof typeof SseEvents];

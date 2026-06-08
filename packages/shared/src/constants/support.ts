@@ -1,0 +1,2 @@
+export const SUPPORT_WHATSAPP_NUMBER = "+256705110478";
+export const SUPPORT_WHATSAPP_URL = `https://wa.me/256705110478`;

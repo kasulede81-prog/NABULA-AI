@@ -55,6 +55,7 @@ export class BuildService {
 
     try {
       await subscriptionService.assertBuildAllowed(userId);
+      await subscriptionService.consumeAiSlot(userId, projectId);
     } catch (err) {
       if (err instanceof BuildLimitError) {
         await this.handleBuildLimitReached(projectId, userId, err);
@@ -73,7 +74,7 @@ export class BuildService {
   /** Run builder with retry loop (max 2 retries). */
   async runBuilder(projectId: string, userId: string, userMessage?: string) {
     try {
-      await subscriptionService.consumeBuildSlot(userId);
+      await subscriptionService.consumeBuildSlot(userId, projectId);
     } catch (err) {
       if (err instanceof BuildLimitError) {
         await this.handleBuildLimitReached(projectId, userId, err);

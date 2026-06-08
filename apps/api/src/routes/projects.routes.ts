@@ -2,6 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { createProjectSchema, updateProjectSchema } from "@nebula/shared";
 import { projectService, ProjectError } from "../services/project.service";
 import { authenticate, type AuthenticatedRequest } from "../middleware/auth";
+import { requireQuota, consumeQuota } from "../middleware/quota";
+import { QuotaExceededError } from "../services/billing/billing.service";
 
 export async function projectRoutes(app: FastifyInstance) {
   app.addHook("preHandler", authenticate);
@@ -12,18 +14,34 @@ export async function projectRoutes(app: FastifyInstance) {
     return { data: projects };
   });
 
-  app.post("/projects", async (request, reply) => {
-    const { userId } = request as AuthenticatedRequest;
-    const parsed = createProjectSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.status(400).send({
-        error: { code: "VALIDATION_ERROR", message: parsed.error.message },
-      });
-    }
+  app.post(
+    "/projects",
+    { preHandler: requireQuota("project_creation") },
+    async (request, reply) => {
+      const { userId } = request as AuthenticatedRequest;
+      const parsed = createProjectSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({
+          error: { code: "VALIDATION_ERROR", message: parsed.error.message },
+        });
+      }
 
-    const project = await projectService.create(userId, parsed.data);
-    return reply.status(201).send(project);
-  });
+      const project = await projectService.create(userId, parsed.data);
+
+      try {
+        await consumeQuota(userId, "project_created", project.id);
+      } catch (err) {
+        if (err instanceof QuotaExceededError) {
+          return reply.status(err.status).send({
+            error: { code: err.code, message: err.message },
+          });
+        }
+        throw err;
+      }
+
+      return reply.status(201).send(project);
+    }
+  );
 
   app.get("/projects/:id", async (request, reply) => {
     const { userId } = request as AuthenticatedRequest;

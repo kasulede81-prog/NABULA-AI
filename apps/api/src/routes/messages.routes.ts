@@ -3,6 +3,8 @@ import { createMessageSchema } from "@nebula/shared";
 import { messageService } from "../services/message.service";
 import { projectService, ProjectError } from "../services/project.service";
 import { authenticate, type AuthenticatedRequest } from "../middleware/auth";
+import { requireQuota } from "../middleware/quota";
+import { rateLimitByUser } from "../middleware/rate-limit";
 
 export async function messageRoutes(app: FastifyInstance) {
   app.addHook("preHandler", authenticate);
@@ -24,7 +26,10 @@ export async function messageRoutes(app: FastifyInstance) {
     }
   });
 
-  app.post("/projects/:projectId/messages", async (request, reply) => {
+  app.post(
+    "/projects/:projectId/messages",
+    { preHandler: [rateLimitByUser("ai"), requireQuota("ai_request")] },
+    async (request, reply) => {
     const { userId } = request as AuthenticatedRequest;
     const { projectId } = request.params as { projectId: string };
     const parsed = createMessageSchema.safeParse(request.body);

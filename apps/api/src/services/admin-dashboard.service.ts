@@ -137,6 +137,14 @@ export class AdminDashboardService {
       { plan: "pro" }
     );
 
+    const { billingAuditService } = await import("./billing/billing-audit.service");
+    await billingAuditService.log({
+      userId,
+      action: "plan_changed",
+      message: "Upgraded to Pro via admin",
+      metadata: { plan: "pro" },
+    });
+
     return { ok: true };
   }
 
@@ -145,8 +153,17 @@ export class AdminDashboardService {
     await prisma.subscription.upsert({
       where: { userId },
       create: { userId, plan: "free", buildsUsedThisPeriod: 0 },
-      update: { buildsUsedThisPeriod: 0 },
+      update: { buildsUsedThisPeriod: 0, creditsBalance: 100 },
     });
+
+    const { billingAuditService } = await import("./billing/billing-audit.service");
+    await billingAuditService.log({
+      userId,
+      action: "credits_granted",
+      message: "Quota reset via admin",
+      metadata: { creditsBalance: 100 },
+    });
+
     return { ok: true };
   }
 

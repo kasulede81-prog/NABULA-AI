@@ -11,6 +11,8 @@ interface User {
     plan: string;
     buildsUsed: number;
     buildsLimit: number;
+    creditsRemaining?: number;
+    status?: string;
   } | null;
 }
 

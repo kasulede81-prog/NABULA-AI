@@ -79,12 +79,118 @@ enum SubscriptionStatus {
   trialing
 }
 
+enum AdminAuditAction {
+  admin_login
+  user_suspended
+  user_reactivated
+  user_quota_reset
+  user_upgraded
+  project_deleted
+  project_force_rebuild
+  preview_restart
+  preview_stopped
+  preview_deleted
+  build_retried
+  preview_retried
+  github_sync_retried
+}
+
+enum SystemServiceStatus {
+  healthy
+  degraded
+  down
+  unknown
+}
+
+enum GithubAuditAction {
+  github_connected
+  github_disconnected
+  repository_created
+  repository_synced
+  repository_sync_failed
+}
+
+enum CreditLedgerType {
+  monthly_grant
+  daily_grant
+  consumption
+  admin_adjustment
+  refund
+}
+
+enum UsageEventType {
+  project_created
+  ai_generation
+  builder_run
+  preview_launch
+  github_export
+}
+
+enum BillingAuditAction {
+  quota_exceeded
+  credits_consumed
+  credits_granted
+  plan_changed
+}
+
+enum UpgradeRequestStatus {
+  pending
+  approved
+  rejected
+}
+
+enum SupportConversationStatus {
+  open
+  closed
+}
+
+enum SupportSenderType {
+  user
+  admin
+}
+
+enum SupportAuditAction {
+  upgrade_requested
+  upgrade_approved
+  upgrade_rejected
+  support_message_sent
+}
+
+enum ErrorSource {
+  api
+  preview
+  github
+  ai_provider
+}
+
+enum FeedbackCategory {
+  bug
+  feature
+  general
+  other
+}
+
+enum FeedbackStatus {
+  open
+  reviewed
+  closed
+}
+
+enum StabilityAuditAction {
+  error_logged
+  feedback_submitted
+  build_retried
+  preview_retried
+  github_sync_retried
+}
+
 model User {
   id               String            @id @default(uuid()) @db.Uuid
   email            String            @unique
   passwordHash     String            @map("password_hash")
   name             String
   stripeCustomerId String?           @map("stripe_customer_id")
+  lastLoginAt      DateTime?         @map("last_login_at")
   createdAt        DateTime          @default(now()) @map("created_at")
   sessions         UserSession[]
   subscription     Subscription?
@@ -92,20 +198,66 @@ model User {
   agentRuns        AgentRun[]
   githubConnection GithubConnection?
   analyticsEvents  AnalyticsEvent[]
+  adminAuditLogs   AdminAuditLog[]   @relation("AdminActor")
+  creditLedger     CreditLedger[]
+  usageEvents      UsageEvent[]
+  billingAuditLogs BillingAuditLog[]
+  upgradeRequests      UpgradeRequest[]
+  supportConversations SupportConversation[]
+  supportAuditLogs     SupportAuditLog[]
+  feedback             Feedback[]
+  errorEvents          ErrorEvent[]
+  stabilityAuditLogs   StabilityAuditLog[]
 
   @@map("users")
 }
 
 model GithubConnection {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @unique @map("user_id") @db.Uuid
-  tokenEnc  String   @map("token_enc")
-  username  String
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                   String             @id @default(uuid()) @db.Uuid
+  userId               String             @unique @map("user_id") @db.Uuid
+  githubUserId         String?            @map("github_user_id")
+  username             String
+  encryptedAccessToken String             @map("encrypted_access_token")
+  tokenType            String             @default("oauth") @map("token_type")
+  createdAt            DateTime           @default(now()) @map("created_at")
+  updatedAt            DateTime           @updatedAt @map("updated_at")
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repositories         GithubRepository[]
 
   @@map("github_connections")
+}
+
+model GithubRepository {
+  id              String           @id @default(uuid()) @db.Uuid
+  projectId       String           @unique @map("project_id") @db.Uuid
+  connectionId    String           @map("connection_id") @db.Uuid
+  repositoryName  String           @map("repository_name")
+  repositoryUrl   String           @map("repository_url")
+  defaultBranch   String           @default("main") @map("default_branch")
+  lastCommitSha   String?          @map("last_commit_sha")
+  lastSyncedAt    DateTime?        @map("last_synced_at")
+  fileSnapshot    Json?            @map("file_snapshot")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  project         Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  connection      GithubConnection   @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([connectionId])
+  @@map("github_repositories")
+}
+
+model GithubAuditLog {
+  id        String            @id @default(uuid()) @db.Uuid
+  userId    String            @map("user_id") @db.Uuid
+  projectId String?           @map("project_id") @db.Uuid
+  action    GithubAuditAction
+  message   String?
+  metadata  Json?
+  createdAt DateTime          @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@map("github_audit_logs")
 }
 
 model UserSession {
@@ -127,13 +279,178 @@ model Subscription {
   plan                   PlanTier           @default(free)
   status                 SubscriptionStatus @default(active)
   buildsUsedThisPeriod   Int                @default(0) @map("builds_used_this_period")
-  buildsLimit            Int                @default(3) @map("builds_limit")
-  currentPeriodEnd       DateTime?          @map("current_period_end")
+  buildsLimit            Int                @default(20) @map("builds_limit")
+  renewsAt               DateTime?          @map("current_period_end")
+  creditsBalance         Int                @default(100) @map("credits_balance")
   createdAt              DateTime           @default(now()) @map("created_at")
   updatedAt              DateTime           @updatedAt @map("updated_at")
   user                   User               @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("subscriptions")
+}
+
+model CreditLedger {
+  id           String           @id @default(uuid()) @db.Uuid
+  userId       String           @map("user_id") @db.Uuid
+  type         CreditLedgerType
+  amount       Int
+  balanceAfter Int              @map("balance_after")
+  metadata     Json?
+  createdAt    DateTime         @default(now()) @map("created_at")
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("credit_ledger")
+}
+
+model UsageEvent {
+  id              String         @id @default(uuid()) @db.Uuid
+  userId          String         @map("user_id") @db.Uuid
+  projectId       String?        @map("project_id") @db.Uuid
+  eventType       UsageEventType @map("event_type")
+  creditsConsumed Int            @default(0) @map("credits_consumed")
+  metadata        Json?
+  createdAt       DateTime       @default(now()) @map("created_at")
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, eventType, createdAt])
+  @@index([projectId, createdAt])
+  @@map("usage_events")
+}
+
+model BillingAuditLog {
+  id        String             @id @default(uuid()) @db.Uuid
+  userId    String             @map("user_id") @db.Uuid
+  action    BillingAuditAction
+  message   String?
+  metadata  Json?
+  createdAt DateTime           @default(now()) @map("created_at")
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@map("billing_audit_logs")
+}
+
+model UpgradeRequest {
+  id             String               @id @default(uuid()) @db.Uuid
+  userId         String               @map("user_id") @db.Uuid
+  requestedPlan  PlanTier             @default(pro) @map("requested_plan")
+  status         UpgradeRequestStatus @default(pending)
+  notes          String?
+  createdAt      DateTime             @default(now()) @map("created_at")
+  updatedAt      DateTime             @updatedAt @map("updated_at")
+  user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([userId, status])
+  @@map("upgrade_requests")
+}
+
+model SupportConversation {
+  id        String                    @id @default(uuid()) @db.Uuid
+  userId    String                    @map("user_id") @db.Uuid
+  status    SupportConversationStatus @default(open)
+  createdAt DateTime                  @default(now()) @map("created_at")
+  updatedAt DateTime                  @updatedAt @map("updated_at")
+  user      User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  SupportMessage[]
+
+  @@index([userId, status])
+  @@index([status, updatedAt])
+  @@map("support_conversations")
+}
+
+model SupportMessage {
+  id             String           @id @default(uuid()) @db.Uuid
+  conversationId String           @map("conversation_id") @db.Uuid
+  senderType     SupportSenderType @map("sender_type")
+  senderUserId   String?          @map("sender_user_id") @db.Uuid
+  message        String
+  readByUser     Boolean          @default(false) @map("read_by_user")
+  readByAdmin    Boolean          @default(false) @map("read_by_admin")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  conversation   SupportConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@map("support_messages")
+}
+
+model SupportAuditLog {
+  id        String             @id @default(uuid()) @db.Uuid
+  userId    String             @map("user_id") @db.Uuid
+  action    SupportAuditAction
+  message   String?
+  metadata  Json?
+  createdAt DateTime           @default(now()) @map("created_at")
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@map("support_audit_logs")
+}
+
+model ErrorLog {
+  id           String      @id @default(uuid()) @db.Uuid
+  fingerprint  String      @unique
+  source       ErrorSource
+  code         String
+  message      String
+  count        Int         @default(1)
+  firstSeenAt  DateTime    @default(now()) @map("first_seen_at")
+  lastSeenAt   DateTime    @default(now()) @map("last_seen_at")
+  events       ErrorEvent[]
+
+  @@index([source, lastSeenAt])
+  @@map("error_logs")
+}
+
+model ErrorEvent {
+  id         String      @id @default(uuid()) @db.Uuid
+  errorLogId String      @map("error_log_id") @db.Uuid
+  source     ErrorSource
+  code       String
+  message    String
+  userId     String?     @map("user_id") @db.Uuid
+  projectId  String?     @map("project_id") @db.Uuid
+  metadata   Json?
+  createdAt  DateTime    @default(now()) @map("created_at")
+  errorLog   ErrorLog    @relation(fields: [errorLogId], references: [id], onDelete: Cascade)
+  user       User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([source, createdAt])
+  @@index([errorLogId, createdAt])
+  @@index([userId, createdAt])
+  @@map("error_events")
+}
+
+model Feedback {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  category  FeedbackCategory @default(general)
+  message   String
+  status    FeedbackStatus   @default(open)
+  createdAt DateTime         @default(now()) @map("created_at")
+  updatedAt DateTime         @updatedAt @map("updated_at")
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([userId, createdAt])
+  @@map("feedback")
+}
+
+model StabilityAuditLog {
+  id        String               @id @default(uuid()) @db.Uuid
+  userId    String?              @map("user_id") @db.Uuid
+  action    StabilityAuditAction
+  message   String?
+  metadata  Json?
+  createdAt DateTime             @default(now()) @map("created_at")
+  user      User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([action, createdAt])
+  @@index([userId, createdAt])
+  @@map("stability_audit_logs")
 }
 
 model Project {
@@ -157,6 +474,7 @@ model Project {
   agentRuns        AgentRun[]
   preview          Preview?
   analyticsEvents  AnalyticsEvent[]
+  githubRepository GithubRepository?
 
   @@unique([userId, slug])
   @@index([userId])
@@ -268,4 +586,49 @@ model PreviewLog {
 
   @@index([previewId, createdAt])
   @@map("preview_logs")
+}
+
+model AdminAuditLog {
+  id          String           @id @default(uuid()) @db.Uuid
+  adminUserId String           @map("admin_user_id") @db.Uuid
+  action      AdminAuditAction
+  targetType  String?          @map("target_type")
+  targetId    String?          @map("target_id")
+  targetLabel String?          @map("target_label")
+  metadata    Json?
+  createdAt   DateTime         @default(now()) @map("created_at")
+  admin       User             @relation("AdminActor", fields: [adminUserId], references: [id], onDelete: Cascade)
+
+  @@index([action, createdAt])
+  @@index([adminUserId, createdAt])
+  @@map("admin_audit_logs")
+}
+
+model SystemMetric {
+  id         String              @id @default(uuid()) @db.Uuid
+  service    String
+  status     SystemServiceStatus @default(unknown)
+  latencyMs  Int?                @map("latency_ms")
+  details    Json?
+  checkedAt  DateTime            @default(now()) @map("checked_at")
+
+  @@index([service, checkedAt])
+  @@map("system_metrics")
+}
+
+model UsageMetric {
+  id               String   @id @default(uuid()) @db.Uuid
+  date             DateTime @db.Date
+  provider         String
+  requestCount     Int      @default(0) @map("request_count")
+  failedCount      Int      @default(0) @map("failed_count")
+  tokensInput      Int      @default(0) @map("tokens_input")
+  tokensOutput     Int      @default(0) @map("tokens_output")
+  estimatedCostUsd Float    @default(0) @map("estimated_cost_usd")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@unique([date, provider])
+  @@index([date])
+  @@map("usage_metrics")
 }

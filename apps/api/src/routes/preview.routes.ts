@@ -1,9 +1,22 @@
 import type { FastifyInstance } from "fastify";
 import { authenticate, type AuthenticatedRequest } from "../middleware/auth";
 import { previewService, PreviewError } from "../services/preview.service";
+import { requireQuota, consumeQuota } from "../middleware/quota";
+import { QuotaExceededError } from "../services/billing/billing.service";
+import { rateLimitByUser } from "../middleware/rate-limit";
+import { captureRouteError } from "../services/stability/error-capture";
 
-function handlePreviewError(err: unknown, reply: import("fastify").FastifyReply) {
+function handlePreviewError(
+  err: unknown,
+  reply: import("fastify").FastifyReply,
+  context?: { userId?: string; projectId?: string }
+) {
   if (err instanceof PreviewError) {
+    captureRouteError("preview", err, {
+      userId: context?.userId,
+      projectId: context?.projectId,
+      code: err.code,
+    });
     return reply.status(err.status).send({
       error: { code: err.code, message: err.message },
     });
@@ -14,7 +27,10 @@ function handlePreviewError(err: unknown, reply: import("fastify").FastifyReply)
 export async function previewRoutes(app: FastifyInstance) {
   app.addHook("preHandler", authenticate);
 
-  app.post("/previews/create", async (request, reply) => {
+  app.post(
+    "/previews/create",
+    { preHandler: [rateLimitByUser("preview"), requireQuota("preview_launch")] },
+    async (request, reply) => {
     const { userId } = request as AuthenticatedRequest;
     const { projectId } = request.body as { projectId: string };
 
@@ -25,6 +41,7 @@ export async function previewRoutes(app: FastifyInstance) {
     }
 
     try {
+      await consumeQuota(userId, "preview_launch", projectId);
       const result = await previewService.create(projectId, userId);
       return reply.status(202).send({
         status: result.status,
@@ -32,7 +49,12 @@ export async function previewRoutes(app: FastifyInstance) {
         message: "Preview provisioning started",
       });
     } catch (err) {
-      return handlePreviewError(err, reply);
+      if (err instanceof QuotaExceededError) {
+        return reply.status(err.status).send({
+          error: { code: err.code, message: err.message },
+        });
+      }
+      return handlePreviewError(err, reply, { userId, projectId });
     }
   });
 
@@ -85,11 +107,15 @@ export async function previewRoutes(app: FastifyInstance) {
     }
   });
 
-  app.post("/projects/:projectId/preview", async (request, reply) => {
+  app.post(
+    "/projects/:projectId/preview",
+    { preHandler: [rateLimitByUser("preview"), requireQuota("preview_launch")] },
+    async (request, reply) => {
     const { userId } = request as AuthenticatedRequest;
     const { projectId } = request.params as { projectId: string };
 
     try {
+      await consumeQuota(userId, "preview_launch", projectId);
       const result = await previewService.create(projectId, userId);
       return reply.status(202).send({
         status: result.status,
@@ -97,7 +123,12 @@ export async function previewRoutes(app: FastifyInstance) {
         message: "Preview provisioning started",
       });
     } catch (err) {
-      return handlePreviewError(err, reply);
+      if (err instanceof QuotaExceededError) {
+        return reply.status(err.status).send({
+          error: { code: err.code, message: err.message },
+        });
+      }
+      return handlePreviewError(err, reply, { userId, projectId });
     }
   });
 
@@ -109,7 +140,7 @@ export async function previewRoutes(app: FastifyInstance) {
       const preview = await previewService.get(projectId, userId);
       return { data: preview };
     } catch (err) {
-      return handlePreviewError(err, reply);
+      return handlePreviewError(err, reply, { userId, projectId });
     }
   });
 
@@ -121,7 +152,7 @@ export async function previewRoutes(app: FastifyInstance) {
       await previewService.stop(projectId, userId);
       return reply.status(204).send();
     } catch (err) {
-      return handlePreviewError(err, reply);
+      return handlePreviewError(err, reply, { userId, projectId });
     }
   });
 }

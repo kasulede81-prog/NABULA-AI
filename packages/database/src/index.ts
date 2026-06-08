@@ -1,2 +1,20 @@
 export { PrismaClient, Prisma } from "@prisma/client";
-export type { AgentType, AgentRunStatus } from "@prisma/client";
+export type {
+  AgentType,
+  AgentRunStatus,
+  AdminAuditAction,
+  SystemServiceStatus,
+  GithubAuditAction,
+  CreditLedgerType,
+  UsageEventType,
+  BillingAuditAction,
+  PlanTier,
+  UpgradeRequestStatus,
+  SupportConversationStatus,
+  SupportSenderType,
+  SupportAuditAction,
+  ErrorSource,
+  FeedbackCategory,
+  FeedbackStatus,
+  StabilityAuditAction,
+} from "@prisma/client";

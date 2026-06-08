@@ -2,9 +2,13 @@ import type { FastifyInstance } from "fastify";
 import { registerSchema, loginSchema } from "@nebula/shared";
 import { authService, AuthError } from "../services/auth.service";
 import { authenticate, type AuthenticatedRequest } from "../middleware/auth";
+import { rateLimit } from "../middleware/rate-limit";
 
 export async function authRoutes(app: FastifyInstance) {
-  app.post("/auth/register", async (request, reply) => {
+  app.post(
+    "/auth/register",
+    { preHandler: rateLimit("register") },
+    async (request, reply) => {
     const parsed = registerSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({
@@ -23,9 +27,13 @@ export async function authRoutes(app: FastifyInstance) {
       }
       throw err;
     }
-  });
+  }
+  );
 
-  app.post("/auth/login", async (request, reply) => {
+  app.post(
+    "/auth/login",
+    { preHandler: rateLimit("login") },
+    async (request, reply) => {
     const parsed = loginSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({
@@ -44,7 +52,8 @@ export async function authRoutes(app: FastifyInstance) {
       }
       throw err;
     }
-  });
+  }
+  );
 
   app.post(
     "/auth/logout",

@@ -79,8 +79,231 @@ export class ApiClient {
         plan: string;
         buildsUsed: number;
         buildsLimit: number;
+        creditsRemaining?: number;
+        status?: string;
       } | null;
+      billing?: {
+        plan: string;
+        creditsRemaining: number;
+        limits: {
+          monthlyProjects: number | null;
+          dailyAiRequests: number | null;
+          dailyPreviews: number | null;
+        };
+        usage: {
+          projectsThisMonth: number;
+          aiRequestsToday: number;
+          previewsToday: number;
+        };
+      };
     }>("/auth/me");
+  }
+
+  getBillingStatus() {
+    return this.request<{
+      data: {
+        plan: string;
+        status: string;
+        creditsRemaining: number;
+        renewsAt: string | null;
+        priorityQueue: boolean;
+        limits: {
+          monthlyProjects: number | null;
+          dailyAiRequests: number | null;
+          dailyPreviews: number | null;
+          monthlyCredits: number | null;
+        };
+        usage: {
+          projectsThisMonth: number;
+          aiRequestsToday: number;
+          previewsToday: number;
+          buildsUsedThisPeriod: number;
+        };
+      };
+    }>("/billing/status");
+  }
+
+  getBillingUsage() {
+    return this.request<{
+      data: Array<{
+        id: string;
+        eventType: string;
+        creditsConsumed: number;
+        projectId: string | null;
+        createdAt: string;
+      }>;
+    }>("/billing/usage");
+  }
+
+  getAdminBilling() {
+    return this.request<{
+      data: {
+        estimatedRevenueUsd: number;
+        activeSubscriptions: number;
+        proSubscriptions: number;
+        freeSubscriptions: number;
+        totalCreditsConsumed: number;
+        usageThisMonth: number;
+        usageToday: number;
+        quotaExceededEvents: number;
+        usageByType: Array<{
+          eventType: string;
+          count: number;
+          creditsConsumed: number;
+        }>;
+        recentLedger: Array<{
+          id: string;
+          userId: string;
+          type: string;
+          amount: number;
+          balanceAfter: number;
+          createdAt: string;
+        }>;
+        pendingUpgrades: Array<{
+          id: string;
+          userId: string;
+          userEmail: string;
+          userName: string;
+          requestedPlan: string;
+          status: string;
+          notes: string | null;
+          createdAt: string;
+        }>;
+      };
+    }>("/admin/billing");
+  }
+
+  getSupportNotifications() {
+    return this.request<{
+      data: { unreadMessages: number; pendingUpgrade: boolean };
+    }>("/support/notifications");
+  }
+
+  getSupportConversation() {
+    return this.request<{
+      data: {
+        id: string;
+        messages: Array<{
+          id: string;
+          senderType: string;
+          message: string;
+          createdAt: string;
+        }>;
+      };
+    }>("/support/conversation");
+  }
+
+  sendSupportMessage(message: string) {
+    return this.request<{
+      data: {
+        id: string;
+        senderType: string;
+        message: string;
+        createdAt: string;
+      };
+    }>("/support/messages", {
+      method: "POST",
+      body: JSON.stringify({ message }),
+    });
+  }
+
+  requestProUpgrade() {
+    return this.request<{
+      data: {
+        upgradeRequest: {
+          id: string;
+          status: string;
+          requestedPlan: string;
+          createdAt: string;
+        };
+        conversation: {
+          id: string;
+          messages: Array<{
+            id: string;
+            senderType: string;
+            message: string;
+            createdAt: string;
+          }>;
+        };
+        alreadyPending: boolean;
+      };
+    }>("/support/upgrade-request", { method: "POST" });
+  }
+
+  getAdminSupportNotifications() {
+    return this.request<{
+      data: { unreadMessages: number; pendingUpgrades: number };
+    }>("/admin/support/notifications");
+  }
+
+  getAdminSupportConversations() {
+    return this.request<{
+      data: Array<{
+        id: string;
+        userId: string;
+        userEmail: string;
+        userName: string;
+        status: string;
+        unreadCount: number;
+        lastMessage: {
+          message: string;
+          senderType: string;
+          createdAt: string;
+        } | null;
+        updatedAt: string;
+      }>;
+    }>("/admin/support/conversations");
+  }
+
+  getAdminSupportConversation(conversationId: string) {
+    return this.request<{
+      data: {
+        id: string;
+        userId: string;
+        userEmail?: string;
+        userName?: string;
+        messages: Array<{
+          id: string;
+          senderType: string;
+          message: string;
+          createdAt: string;
+        }>;
+      };
+    }>(`/admin/support/conversations/${conversationId}`);
+  }
+
+  sendAdminSupportMessage(conversationId: string, message: string) {
+    return this.request<{
+      data: {
+        id: string;
+        senderType: string;
+        message: string;
+        createdAt: string;
+      };
+    }>(`/admin/support/conversations/${conversationId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ message }),
+    });
+  }
+
+  approveUpgradeRequest(requestId: string, notes?: string) {
+    return this.request<{ data: { id: string; status: string } }>(
+      `/admin/upgrade-requests/${requestId}/approve`,
+      {
+        method: "POST",
+        body: JSON.stringify({ notes }),
+      }
+    );
+  }
+
+  rejectUpgradeRequest(requestId: string, notes?: string) {
+    return this.request<{ data: { id: string; status: string } }>(
+      `/admin/upgrade-requests/${requestId}/reject`,
+      {
+        method: "POST",
+        body: JSON.stringify({ notes }),
+      }
+    );
   }
 
   listProjects() {
@@ -296,8 +519,34 @@ export class ApiClient {
 
   getGithubConnection() {
     return this.request<{
-      data: { connected: boolean; username?: string; connectedAt?: string };
+      data: {
+        connected: boolean;
+        username?: string;
+        connectedAt?: string;
+        tokenType?: string;
+        oauthConfigured?: boolean;
+      };
     }>("/github/connection");
+  }
+
+  getGithubStatus() {
+    return this.request<{
+      data: {
+        oauthConfigured: boolean;
+        connected: boolean;
+        username: string | null;
+        tokenType: string | null;
+        connectedAt: string | null;
+      };
+    }>("/github/status");
+  }
+
+  getGithubConnectUrl() {
+    const token = this.getToken();
+    const base = API_URL.replace(/\/v1$/, "");
+    return token
+      ? `${base}/v1/github/connect?token=${encodeURIComponent(token)}`
+      : null;
   }
 
   connectGithub(token: string) {
@@ -310,7 +559,48 @@ export class ApiClient {
   }
 
   disconnectGithub() {
-    return this.request<void>("/github/connection", { method: "DELETE" });
+    return this.request<void>("/github/disconnect", { method: "POST" });
+  }
+
+  getGithubProjectStatus(projectId: string) {
+    return this.request<{
+      data: {
+        connected: boolean;
+        username: string | null;
+        oauthConfigured: boolean;
+        repository: {
+          repositoryName: string;
+          repositoryUrl: string;
+          defaultBranch: string;
+          lastCommitSha: string | null;
+          lastSyncedAt: string | null;
+          createdAt: string;
+        } | null;
+        syncAvailable: boolean;
+        changedFileCount: number;
+      };
+    }>(`/projects/${projectId}/github/status`);
+  }
+
+  createGithubRepository(projectId: string) {
+    return this.request<{
+      data: {
+        repositoryUrl: string;
+        defaultBranch: string;
+        commitSha: string;
+      };
+    }>(`/projects/${projectId}/github/create`, { method: "POST" });
+  }
+
+  syncGithubRepository(projectId: string) {
+    return this.request<{
+      data: {
+        repositoryUrl: string;
+        defaultBranch: string;
+        commitSha: string | null;
+        changedFiles: number;
+      };
+    }>(`/projects/${projectId}/github/sync`, { method: "POST" });
   }
 
   getGithubExport(projectId: string) {
@@ -319,6 +609,7 @@ export class ApiClient {
         repoUrl: string;
         repoFullName: string | null;
         exportedAt: string | null;
+        lastCommitSha?: string | null;
       } | null;
     }>(`/projects/${projectId}/github/export`);
   }
@@ -332,6 +623,44 @@ export class ApiClient {
         exportedAt: string;
       };
     }>(`/projects/${projectId}/github/export`, { method: "POST" });
+  }
+
+  getAdminGithub() {
+    return this.request<{
+      data: {
+        connectedAccounts: number;
+        repositoriesCreated: number;
+        exportSuccessRate: number;
+        exportFailures: number;
+        syncSuccesses: number;
+        createSuccesses: number;
+        oauthConfigured: boolean;
+        recentConnections: Array<{
+          id: string;
+          username: string;
+          githubUserId: string | null;
+          tokenType: string;
+          userEmail: string;
+          connectedAt: string;
+        }>;
+        recentRepositories: Array<{
+          id: string;
+          repositoryName: string;
+          repositoryUrl: string;
+          projectName: string;
+          lastCommitSha: string | null;
+          lastSyncedAt: string | null;
+          createdAt: string;
+        }>;
+        recentFailures: Array<{
+          id: string;
+          message: string | null;
+          userId: string;
+          projectId: string | null;
+          createdAt: string;
+        }>;
+      };
+    }>("/admin/github");
   }
 
   renameFile(projectId: string, fromPath: string, toPath: string) {
@@ -399,34 +728,195 @@ export class ApiClient {
     }>("/admin/analytics/builds");
   }
 
+  getAdminMe() {
+    return this.request<{
+      data: {
+        isAdmin: boolean;
+        email: string;
+        name: string | null;
+        userId: string;
+        adminConfigured: boolean;
+      };
+    }>("/admin/me");
+  }
+
   getAdminOverview() {
     return this.request<{
       data: {
         totalUsers: number;
+        activeUsers: number;
         totalProjects: number;
+        projectsCreatedToday: number;
+        totalBuilds: number;
+        successfulBuilds: number;
+        failedBuilds: number;
+        buildSuccessRate: number;
+        buildFailureRate: number;
+        activePreviews: number;
+        previewFailures: number;
+        monthlyAiRequests: number;
         readyProjects: number;
         failedProjects: number;
-        activePreviews: number;
         githubExports: number;
         estimatedAiCostUsd: number;
+        trends?: {
+          projectsToday?: { changePercent: number | null; direction: string };
+          monthlyAiRequests?: { changePercent: number | null; direction: string };
+        };
       };
     }>("/admin/dashboard/overview");
   }
 
-  getAdminUsers() {
+  getAdminUsersPaginated(opts: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    status?: string;
+  } = {}) {
+    const q = new URLSearchParams();
+    if (opts.page) q.set("page", String(opts.page));
+    if (opts.limit) q.set("limit", String(opts.limit));
+    if (opts.search) q.set("search", opts.search);
+    if (opts.status) q.set("status", opts.status);
+    const suffix = q.toString() ? `?${q}` : "";
     return this.request<{
-      data: Array<{
+      data: {
+        items: Array<{
+          id: string;
+          name: string;
+          email: string;
+          plan: string;
+          projectsCount: number;
+          buildsUsed: number;
+          buildsLimit: number;
+          status: string;
+          createdAt: string;
+        }>;
+        total: number;
+        page: number;
+        limit: number;
+        totalPages: number;
+      };
+    }>(`/admin/users${suffix}`);
+  }
+
+  getAdminUser(userId: string) {
+    return this.request<{
+      data: {
         id: string;
         name: string;
         email: string;
         plan: string;
-        projectsCount: number;
+        status: string;
         buildsUsed: number;
         buildsLimit: number;
-        status: string;
+        projectsCount: number;
+        agentRuns: number;
+        activity: {
+          lastLoginAt: string | null;
+          memberSince: string | null;
+          projectsCreated: number;
+          previewsLaunched: number;
+          exportsPerformed: number;
+        };
+        projects: Array<{
+          id: string;
+          name: string;
+          status: string;
+          buildCount: number;
+          createdAt: string;
+        }>;
+        buildStats: Array<{ status: string; count: number }>;
         createdAt: string;
-      }>;
-    }>("/admin/users");
+      };
+    }>(`/admin/users/${userId}`);
+  }
+
+  getAdminUsers() {
+    return this.getAdminUsersPaginated();
+  }
+
+  getAdminProjects(opts: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    status?: string;
+  } = {}) {
+    const q = new URLSearchParams();
+    if (opts.page) q.set("page", String(opts.page));
+    if (opts.limit) q.set("limit", String(opts.limit));
+    if (opts.search) q.set("search", opts.search);
+    if (opts.status) q.set("status", opts.status);
+    const suffix = q.toString() ? `?${q}` : "";
+    return this.request<{
+      data: {
+        items: Array<{
+          id: string;
+          name: string;
+          status: string;
+          ownerName: string;
+          ownerEmail: string;
+          filesCount: number;
+          buildsCount: number;
+          previewStatus: string | null;
+          createdAt: string;
+        }>;
+        total: number;
+        page: number;
+        limit: number;
+        totalPages: number;
+      };
+    }>(`/admin/projects${suffix}`);
+  }
+
+  deleteAdminProject(projectId: string) {
+    return this.request<{ data: { ok: boolean } }>(
+      `/admin/projects/${projectId}`,
+      { method: "DELETE" }
+    );
+  }
+
+  forceRebuildProject(projectId: string) {
+    return this.request<{ data: { ok: boolean } }>(
+      `/admin/projects/${projectId}/force-rebuild`,
+      { method: "POST" }
+    );
+  }
+
+  forcePreviewRestart(projectId: string) {
+    return this.request<{ data: { ok: boolean } }>(
+      `/admin/projects/${projectId}/force-preview-restart`,
+      { method: "POST" }
+    );
+  }
+
+  getAdminBuildAnalytics() {
+    return this.request<{
+      data: {
+        summary: {
+          totalBuilds: number;
+          successfulBuilds: number;
+          failedBuilds: number;
+          successRate: number;
+          failureRate: number;
+          averageBuildDurationMs: number | null;
+        };
+        buildsPerDay: Array<{
+          date: string;
+          total: number;
+          success: number;
+          failed: number;
+          avgDurationMs: number | null;
+        }>;
+        topErrors: Array<{ code: string; count: number }>;
+        buildsByProvider: Array<{
+          provider: string;
+          total: number;
+          successful: number;
+          failed: number;
+        }>;
+      };
+    }>("/admin/builds/analytics");
   }
 
   suspendUser(userId: string) {
@@ -486,11 +976,22 @@ export class ApiClient {
         userName: string;
         userEmail: string;
         status: string;
+        phase: string;
+        previewUrl: string | null;
         sandboxId: string | null;
+        sandboxAgeMinutes: number | null;
+        errorCode: string | null;
         estimatedCostUsd: number | null;
         expiresAt: string | null;
       }>;
     }>("/admin/previews");
+  }
+
+  restartAdminPreview(projectId: string) {
+    return this.request<{ data: { ok: boolean } }>(
+      `/admin/previews/${projectId}/restart`,
+      { method: "POST" }
+    );
   }
 
   stopAdminPreview(projectId: string) {
@@ -546,6 +1047,188 @@ export class ApiClient {
         e2b: { configured: boolean; template: string };
       };
     }>("/admin/health");
+  }
+
+  getAdminAiUsage() {
+    return this.request<{
+      data: {
+        currentProvider: string;
+        configured: boolean;
+        totalRequests: number;
+        totalFailed: number;
+        totalTokensInput: number;
+        totalTokensOutput: number;
+        estimatedCostUsd: number;
+        providerBreakdown: Array<{
+          provider: string;
+          requests: number;
+          failed: number;
+          tokensIn: number;
+          tokensOut: number;
+          estimatedCostUsd: number;
+        }>;
+        dailyTokenUsage: Array<{
+          date: string;
+          requests: number;
+          tokensInput: number;
+          tokensOutput: number;
+        }>;
+        deepseek: { requests: number; failed: number };
+        anthropic: { requests: number; failed: number };
+      };
+    }>("/admin/ai");
+  }
+
+  getAdminSystem() {
+    return this.request<{
+      data: {
+        checkedAt: string;
+        overall: string;
+        services: Array<{
+          service: string;
+          status: string;
+          latencyMs: number | null;
+          lastCheck: string;
+        }>;
+        backup?: {
+          databaseReachable: boolean;
+          lastMetricCheck: string | null;
+        };
+        rateLimits?: Record<string, number>;
+      };
+    }>("/admin/system");
+  }
+
+  submitFeedback(category: string, message: string) {
+    return this.request<{
+      data: { id: string; category: string; status: string; createdAt: string };
+    }>("/feedback", {
+      method: "POST",
+      body: JSON.stringify({ category, message }),
+    });
+  }
+
+  getAdminErrors(opts: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    source?: string;
+  } = {}) {
+    const q = new URLSearchParams();
+    if (opts.page) q.set("page", String(opts.page));
+    if (opts.limit) q.set("limit", String(opts.limit));
+    if (opts.search) q.set("search", opts.search);
+    if (opts.source) q.set("source", opts.source);
+    const suffix = q.toString() ? `?${q}` : "";
+    return this.request<{
+      data: {
+        events: {
+          items: Array<{
+            id: string;
+            source: string;
+            code: string;
+            message: string;
+            userId: string | null;
+            userEmail: string | null;
+            projectId: string | null;
+            createdAt: string;
+          }>;
+          total: number;
+          page: number;
+          totalPages: number;
+        };
+        stats: {
+          totalEvents: number;
+          last24h: number;
+          bySource: Array<{ source: string; count: number }>;
+          topErrors: Array<{
+            id: string;
+            source: string;
+            code: string;
+            message: string;
+            count: number;
+            lastSeenAt: string;
+          }>;
+        };
+      };
+    }>(`/admin/errors${suffix}`);
+  }
+
+  getAdminFeedback(opts: { page?: number; limit?: number; status?: string } = {}) {
+    const q = new URLSearchParams();
+    if (opts.page) q.set("page", String(opts.page));
+    if (opts.limit) q.set("limit", String(opts.limit));
+    if (opts.status) q.set("status", opts.status);
+    const suffix = q.toString() ? `?${q}` : "";
+    return this.request<{
+      data: {
+        items: Array<{
+          id: string;
+          userId: string;
+          userEmail: string;
+          userName: string;
+          category: string;
+          message: string;
+          status: string;
+          createdAt: string;
+        }>;
+        total: number;
+        page: number;
+        totalPages: number;
+      };
+    }>(`/admin/feedback${suffix}`);
+  }
+
+  updateAdminFeedbackStatus(feedbackId: string, status: string) {
+    return this.request<{ data: { id: string; status: string } }>(
+      `/admin/feedback/${feedbackId}`,
+      { method: "PATCH", body: JSON.stringify({ status }) }
+    );
+  }
+
+  retryAdminBuild(projectId: string) {
+    return this.request<{ data: { ok: boolean } }>(
+      `/admin/projects/${projectId}/retry-build`,
+      { method: "POST" }
+    );
+  }
+
+  retryAdminPreview(projectId: string) {
+    return this.request<{ data: { ok: boolean } }>(
+      `/admin/projects/${projectId}/retry-preview`,
+      { method: "POST" }
+    );
+  }
+
+  retryAdminGithubSync(projectId: string) {
+    return this.request<{ data: { ok: boolean } }>(
+      `/admin/projects/${projectId}/retry-github-sync`,
+      { method: "POST" }
+    );
+  }
+
+  getAdminAudit(opts: { page?: number; limit?: number; search?: string } = {}) {
+    const q = new URLSearchParams();
+    if (opts.page) q.set("page", String(opts.page));
+    if (opts.limit) q.set("limit", String(opts.limit));
+    if (opts.search) q.set("search", opts.search);
+    const suffix = q.toString() ? `?${q}` : "";
+    return this.request<{
+      data: {
+        items: Array<{
+          id: string;
+          action: string;
+          adminEmail: string;
+          targetType: string | null;
+          targetLabel: string | null;
+          createdAt: string;
+        }>;
+        total: number;
+        page: number;
+        limit: number;
+        totalPages: number;
+      };
+    }>(`/admin/audit${suffix}`);
   }
 
   getAdminAuditLogs() {

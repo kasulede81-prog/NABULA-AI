@@ -1,6 +1,8 @@
-import { prisma } from "../lib/prisma";
-
-type PlanTier = "free" | "starter" | "pro";
+import type { PlanTier } from "@nebula/database";
+import {
+  billingService,
+  QuotaExceededError,
+} from "./billing/billing.service";
 
 export class BuildLimitError extends Error {
   constructor(
@@ -34,119 +36,63 @@ export function isBuildLimitReached(
   return buildsUsed >= buildsLimit;
 }
 
+function quotaToBuildLimitError(err: QuotaExceededError): BuildLimitError {
+  const details = err.details ?? {};
+  return new BuildLimitError(
+    err.code,
+    err.message,
+    err.status,
+    (details.used as number) ?? 0,
+    (details.limit as number) ?? 0
+  );
+}
+
+async function snapshotFromBilling(userId: string): Promise<SubscriptionSnapshot> {
+  const snap = await billingService.getSnapshot(userId);
+  return {
+    plan: snap.plan,
+    buildsUsed: snap.usage.aiRequestsToday,
+    buildsLimit: snap.limits.dailyAiRequests ?? 999999,
+  };
+}
+
+/** Delegates to billing module — keeps build.service integration unchanged. */
 export class SubscriptionService {
-  private async maybeResetPeriod(
-    userId: string,
-    currentPeriodEnd: Date | null,
-    buildsUsedThisPeriod: number
-  ): Promise<number> {
-    if (!currentPeriodEnd || currentPeriodEnd >= new Date()) {
-      return buildsUsedThisPeriod;
-    }
-
-    const nextPeriodEnd = new Date(currentPeriodEnd);
-    nextPeriodEnd.setMonth(nextPeriodEnd.getMonth() + 1);
-
-    await prisma.subscription.update({
-      where: { userId },
-      data: {
-        buildsUsedThisPeriod: 0,
-        currentPeriodEnd: nextPeriodEnd,
-      },
-    });
-
-    return 0;
-  }
-
   async getSnapshot(userId: string): Promise<SubscriptionSnapshot> {
-    const sub = await prisma.subscription.findUnique({ where: { userId } });
-    if (!sub) {
-      return { plan: "free", buildsUsed: 0, buildsLimit: 3 };
-    }
-
-    const buildsUsed = await this.maybeResetPeriod(
-      userId,
-      sub.currentPeriodEnd,
-      sub.buildsUsedThisPeriod
-    );
-
-    return {
-      plan: sub.plan,
-      buildsUsed,
-      buildsLimit: sub.buildsLimit,
-    };
+    return snapshotFromBilling(userId);
   }
 
-  /** Check whether clarifier or builder may start (no increment). */
   async assertBuildAllowed(userId: string): Promise<SubscriptionSnapshot> {
-    const snapshot = await this.getSnapshot(userId);
-    if (isBuildLimitReached(snapshot.plan, snapshot.buildsUsed, snapshot.buildsLimit)) {
-      throw new BuildLimitError(
-        "BUILD_LIMIT_REACHED",
-        "You have reached your monthly build limit.",
-        429,
-        snapshot.buildsUsed,
-        snapshot.buildsLimit
-      );
+    try {
+      await billingService.assertAiRequest(userId);
+      return snapshotFromBilling(userId);
+    } catch (err) {
+      if (err instanceof QuotaExceededError) throw quotaToBuildLimitError(err);
+      throw err;
     }
-    return snapshot;
   }
 
-  /**
-   * Atomically reserve a build slot when the builder starts.
-   * Pro users increment for analytics but never block.
-   */
-  async consumeBuildSlot(userId: string): Promise<SubscriptionSnapshot> {
-    return prisma.$transaction(async (tx) => {
-      const sub = await tx.subscription.findUnique({ where: { userId } });
-      if (!sub) {
-        throw new BuildLimitError(
-          "BUILD_LIMIT_REACHED",
-          "You have reached your monthly build limit.",
-          429,
-          0,
-          3
-        );
-      }
+  async consumeAiSlot(userId: string, projectId: string): Promise<SubscriptionSnapshot> {
+    try {
+      await billingService.consumeAiRequest(userId, projectId);
+      return snapshotFromBilling(userId);
+    } catch (err) {
+      if (err instanceof QuotaExceededError) throw quotaToBuildLimitError(err);
+      throw err;
+    }
+  }
 
-      let buildsUsed = sub.buildsUsedThisPeriod;
-      if (sub.currentPeriodEnd && sub.currentPeriodEnd < new Date()) {
-        const nextPeriodEnd = new Date(sub.currentPeriodEnd);
-        nextPeriodEnd.setMonth(nextPeriodEnd.getMonth() + 1);
-        buildsUsed = 0;
-        await tx.subscription.update({
-          where: { userId },
-          data: {
-            buildsUsedThisPeriod: 0,
-            currentPeriodEnd: nextPeriodEnd,
-          },
-        });
-      }
-
-      if (
-        !isUnlimitedBuildPlan(sub.plan) &&
-        buildsUsed >= sub.buildsLimit
-      ) {
-        throw new BuildLimitError(
-          "BUILD_LIMIT_REACHED",
-          "You have reached your monthly build limit.",
-          429,
-          buildsUsed,
-          sub.buildsLimit
-        );
-      }
-
-      const updated = await tx.subscription.update({
-        where: { userId },
-        data: { buildsUsedThisPeriod: { increment: 1 } },
-      });
-
-      return {
-        plan: updated.plan,
-        buildsUsed: updated.buildsUsedThisPeriod,
-        buildsLimit: updated.buildsLimit,
-      };
-    });
+  async consumeBuildSlot(
+    userId: string,
+    projectId?: string
+  ): Promise<SubscriptionSnapshot> {
+    try {
+      await billingService.consumeBuilderRun(userId, projectId ?? "unknown");
+      return snapshotFromBilling(userId);
+    } catch (err) {
+      if (err instanceof QuotaExceededError) throw quotaToBuildLimitError(err);
+      throw err;
+    }
   }
 }
 

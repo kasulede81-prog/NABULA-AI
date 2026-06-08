@@ -46,6 +46,15 @@ const envSchema = z.object({
   PREVIEW_MAX_PER_USER: z.coerce.number().default(2),
   PREVIEW_COST_USD_PER_HOUR: z.coerce.number().default(0.1),
   ADMIN_EMAILS: z.string().default(""),
+  GITHUB_CLIENT_ID: z.string().default(""),
+  GITHUB_CLIENT_SECRET: z.string().default(""),
+  GITHUB_OAUTH_CALLBACK_URL: z.string().url().optional(),
+  GITHUB_TOKEN_ENCRYPTION_KEY: z.string().default(""),
+  RATE_LIMIT_LOGIN_PER_MIN: z.coerce.number().default(10),
+  RATE_LIMIT_REGISTER_PER_MIN: z.coerce.number().default(5),
+  RATE_LIMIT_AI_PER_MIN: z.coerce.number().default(30),
+  RATE_LIMIT_PREVIEW_PER_MIN: z.coerce.number().default(10),
+  RATE_LIMIT_GITHUB_PER_MIN: z.coerce.number().default(5),
 });
 
 const parsed = envSchema.safeParse(process.env);

@@ -2,6 +2,9 @@ import { prisma } from "../lib/prisma";
 import { hashPassword, verifyPassword } from "../lib/password";
 import { hashToken, signToken } from "../lib/jwt";
 import type { RegisterInput, LoginInput } from "@nebula/shared";
+import { billingService } from "./billing/billing.service";
+import { PLAN_LIMITS } from "./billing/billing-plans";
+import { userActivityService } from "./stability/user-activity.service";
 
 const SESSION_DAYS = 7;
 
@@ -16,6 +19,7 @@ export class AuthService {
 
     const passwordHash = await hashPassword(input.password);
 
+    const initialCredits = PLAN_LIMITS.free.monthlyCredits ?? 100;
     const user = await prisma.user.create({
       data: {
         email: input.email.toLowerCase(),
@@ -24,10 +28,21 @@ export class AuthService {
         subscription: {
           create: {
             plan: "free",
-            buildsLimit: 3,
-            currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+            buildsLimit: PLAN_LIMITS.free.dailyAiRequests ?? 20,
+            creditsBalance: initialCredits,
+            renewsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
           },
         },
+      },
+    });
+
+    await prisma.creditLedger.create({
+      data: {
+        userId: user.id,
+        type: "monthly_grant",
+        amount: initialCredits,
+        balanceAfter: initialCredits,
+        metadata: { reason: "signup" },
       },
     });
 
@@ -48,7 +63,9 @@ export class AuthService {
       throw new AuthError("ACCOUNT_SUSPENDED", "Account suspended", 403);
     }
 
-    return this.createSession(user.id);
+    const session = await this.createSession(user.id);
+    await userActivityService.recordLogin(user.id);
+    return session;
   }
 
   async logout(sessionId: string) {
@@ -64,17 +81,22 @@ export class AuthService {
       throw new AuthError("NOT_FOUND", "User not found", 404);
     }
 
+    const billing = await billingService.getSnapshot(userId);
+
     return {
       id: user.id,
       email: user.email,
       name: user.name,
       subscription: user.subscription
         ? {
-            plan: user.subscription.plan,
-            buildsUsed: user.subscription.buildsUsedThisPeriod,
-            buildsLimit: user.subscription.buildsLimit,
+            plan: billing.plan,
+            buildsUsed: billing.usage.aiRequestsToday,
+            buildsLimit: billing.limits.dailyAiRequests ?? 999999,
+            creditsRemaining: billing.creditsRemaining,
+            status: billing.status,
           }
         : null,
+      billing,
     };
   }
 

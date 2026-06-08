@@ -10,7 +10,11 @@ import { eventRoutes } from "./routes/events.routes";
 import { buildRoutes } from "./routes/build.routes";
 import { previewRoutes } from "./routes/preview.routes";
 import { githubRoutes } from "./routes/github.routes";
+import { billingRoutes } from "./routes/billing.routes";
+import { supportRoutes } from "./routes/support.routes";
+import { stabilityRoutes } from "./routes/stability.routes";
 import { adminRoutes } from "./routes/admin.routes";
+import { errorMonitorService } from "./services/stability/error-monitor.service";
 
 export async function buildApp() {
   const app = Fastify({
@@ -34,13 +38,22 @@ export async function buildApp() {
       await v1.register(buildRoutes);
       await v1.register(previewRoutes);
       await v1.register(githubRoutes);
+      await v1.register(billingRoutes);
+      await v1.register(supportRoutes);
+      await v1.register(stabilityRoutes);
       await v1.register(adminRoutes);
     },
     { prefix: "/v1" }
   );
 
-  app.setErrorHandler((error, _request, reply) => {
+  app.setErrorHandler((error, request, reply) => {
     app.log.error(error);
+    void errorMonitorService
+      .captureFromUnknown("api", error, {
+        code: "INTERNAL_ERROR",
+        userId: (request as { userId?: string }).userId,
+      })
+      .catch(() => undefined);
     reply.status(500).send({
       error: { code: "INTERNAL_ERROR", message: "Internal server error" },
     });
