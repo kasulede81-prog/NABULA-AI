@@ -16,6 +16,8 @@ export const SseEvents = {
   BUILD_LIMIT_REACHED: "build.limit_reached",
   DEEPSEEK_TOOL_RECOVERY: "deepseek_tool_recovery",
   PREVIEW_STARTED: "preview.started",
+  PREVIEW_PHASE: "preview.phase",
+  PREVIEW_LOG: "preview.log",
   PREVIEW_READY: "preview.ready",
   PREVIEW_FAILED: "preview.failed",
   PREVIEW_DELETED: "preview.deleted",

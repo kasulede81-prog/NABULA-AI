@@ -23,9 +23,12 @@ export function ProgressFeed({ events, connected }: ProgressFeedProps) {
       e.type === "build.completed" ||
       e.type === "build.failed" ||
       e.type === "preview.started" ||
+      e.type === "preview.phase" ||
+      e.type === "preview.log" ||
       e.type === "preview.ready" ||
       e.type === "preview.failed" ||
-      e.type === "preview.deleted"
+      e.type === "preview.deleted" ||
+      e.type === "preview.expired"
   );
 
   return (

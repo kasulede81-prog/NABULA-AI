@@ -6,6 +6,7 @@ export * from "./schemas/spec";
 export * from "./validation/build-validation";
 export * from "./validation/build-manifest";
 export * from "./constants/events";
+export * from "./types/preview";
 export * from "./constants/llm-cost";
 export * from "./config/supabase";
 export * from "./types/llm";

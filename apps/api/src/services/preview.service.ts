@@ -1,4 +1,3 @@
-import { Sandbox } from "e2b";
 import { prisma } from "../lib/prisma";
 import { env } from "../config/env";
 import { projectService } from "./project.service";
@@ -8,14 +7,19 @@ import { analyticsService, PlatformMetricEvents } from "./analytics.service";
 import {
   SseEvents,
   validateBuildReady,
+  PreviewPhases,
+  PreviewErrorCodes,
   type AppSpec,
+  type PreviewPhase,
+  type PreviewFramework,
+  type PreviewPackageManager,
+  type PreviewStatusResponse,
+  type PreviewLogEntry,
 } from "@nebula/shared";
+import { previewRunner } from "./preview/preview-runner";
+import { previewLogStore } from "./preview/preview-log-store";
 
 type PreviewStatus = "starting" | "ready" | "stopped" | "error";
-
-const PREVIEW_PORT = 3000;
-const DEV_SERVER_WAIT_MS = 45_000;
-const DEV_SERVER_POLL_MS = 2_000;
 
 export class PreviewError extends Error {
   constructor(
@@ -31,7 +35,13 @@ export interface PreviewRecord {
   id: string;
   projectId: string;
   status: PreviewStatus;
+  phase: PreviewPhase;
   previewUrl: string | null;
+  detectedPort: number | null;
+  framework: PreviewFramework | null;
+  packageManager: PreviewPackageManager | null;
+  errorCode: string | null;
+  errorMessage: string | null;
   sandboxId: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -44,7 +54,13 @@ function toPreviewRecord(row: {
   id: string;
   projectId: string;
   status: PreviewStatus;
+  phase?: PreviewPhase | null;
   url: string | null;
+  detectedPort?: number | null;
+  framework?: string | null;
+  packageManager?: string | null;
+  errorCode?: string | null;
+  errorMessage?: string | null;
   sandboxId: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -56,13 +72,38 @@ function toPreviewRecord(row: {
     id: row.id,
     projectId: row.projectId,
     status: row.status,
+    phase: (row.phase as PreviewPhase) ?? PreviewPhases.PREPARING_SANDBOX,
     previewUrl: row.url,
+    detectedPort: row.detectedPort ?? null,
+    framework: (row.framework as PreviewFramework) ?? null,
+    packageManager: (row.packageManager as PreviewPackageManager) ?? null,
+    errorCode: row.errorCode ?? null,
+    errorMessage: row.errorMessage ?? null,
     sandboxId: row.sandboxId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     expiresAt: row.expiresAt,
     startedAt: row.startedAt ?? null,
     estimatedCostUsd: row.estimatedCostUsd ?? null,
+  };
+}
+
+function toStatusResponse(record: PreviewRecord): PreviewStatusResponse {
+  return {
+    id: record.id,
+    projectId: record.projectId,
+    status: record.status,
+    phase: record.phase,
+    previewUrl: record.previewUrl,
+    detectedPort: record.detectedPort,
+    framework: record.framework,
+    packageManager: record.packageManager,
+    errorCode: record.errorCode,
+    errorMessage: record.errorMessage,
+    sandboxId: record.sandboxId,
+    expiresAt: record.expiresAt?.toISOString() ?? null,
+    startedAt: record.startedAt?.toISOString() ?? null,
+    updatedAt: record.updatedAt.toISOString(),
   };
 }
 
@@ -88,6 +129,43 @@ export class PreviewService {
     return row ? toPreviewRecord(row) : null;
   }
 
+  async getById(previewId: string, userId: string): Promise<PreviewRecord | null> {
+    const row = await prisma.preview.findUnique({
+      where: { id: previewId },
+      include: { project: { select: { userId: true } } },
+    });
+    if (!row || row.project.userId !== userId) return null;
+    return toPreviewRecord(row);
+  }
+
+  async getStatus(previewId: string, userId: string): Promise<PreviewStatusResponse | null> {
+    const record = await this.getById(previewId, userId);
+    return record ? toStatusResponse(record) : null;
+  }
+
+  async getLogs(
+    previewId: string,
+    userId: string,
+    since?: string
+  ): Promise<PreviewLogEntry[]> {
+    const record = await this.getById(previewId, userId);
+    if (!record) return [];
+
+    const rows = await previewLogStore.list(
+      previewId,
+      since ? new Date(since) : undefined
+    );
+
+    return rows.map((row) => ({
+      id: row.id,
+      previewId: row.previewId,
+      level: row.level as PreviewLogEntry["level"],
+      source: row.source as PreviewLogEntry["source"],
+      message: row.message,
+      createdAt: row.createdAt.toISOString(),
+    }));
+  }
+
   async countActiveForUser(userId: string, excludeProjectId?: string): Promise<number> {
     return prisma.preview.count({
       where: {
@@ -98,12 +176,11 @@ export class PreviewService {
     });
   }
 
-  /** Validate project is ready and has required preview files. */
   async validateReadyForPreview(projectId: string, userId: string): Promise<void> {
     if (!this.isConfigured()) {
       throw new PreviewError(
-        "E2B_NOT_CONFIGURED",
-        "E2B_API_KEY is not configured",
+        PreviewErrorCodes.E2B_NOT_CONFIGURED,
+        "E2B_API_KEY is not configured. Set it in your API environment to enable live previews.",
         503
       );
     }
@@ -112,7 +189,7 @@ export class PreviewService {
 
     if (project.status !== "ready") {
       throw new PreviewError(
-        "PROJECT_NOT_READY",
+        PreviewErrorCodes.PROJECT_NOT_READY,
         "Preview can only be created when project status is ready",
         422
       );
@@ -160,10 +237,39 @@ export class PreviewService {
     });
   }
 
+  async create(projectId: string, userId: string): Promise<{ previewId: string; status: string }> {
+    await this.validateReadyForPreview(projectId, userId);
+
+    if (this.running.has(projectId)) {
+      throw new PreviewError(
+        "PREVIEW_IN_PROGRESS",
+        "Preview provisioning is already in progress",
+        409
+      );
+    }
+
+    const existing = await prisma.preview.findUnique({ where: { projectId } });
+    if (existing?.status === "starting") {
+      throw new PreviewError(
+        "PREVIEW_IN_PROGRESS",
+        "Preview provisioning is already in progress",
+        409
+      );
+    }
+
+    this.scheduleStart(projectId, userId);
+
+    const preview = await prisma.preview.findUnique({ where: { projectId } });
+    return {
+      previewId: preview?.id ?? "",
+      status: "accepted",
+    };
+  }
+
   async start(projectId: string, userId: string): Promise<PreviewRecord> {
     if (!this.isConfigured()) {
       throw new PreviewError(
-        "E2B_NOT_CONFIGURED",
+        PreviewErrorCodes.E2B_NOT_CONFIGURED,
         "E2B_API_KEY is not configured",
         503
       );
@@ -178,6 +284,8 @@ export class PreviewService {
     }
 
     this.running.add(projectId);
+
+    let previewId = "";
 
     try {
       await this.validateReadyForPreview(projectId, userId);
@@ -195,25 +303,40 @@ export class PreviewService {
         create: {
           projectId,
           status: "starting",
+          phase: PreviewPhases.PREPARING_SANDBOX,
           url: null,
           sandboxId: null,
+          detectedPort: null,
+          framework: null,
+          packageManager: null,
+          errorCode: null,
+          errorMessage: null,
           expiresAt,
           startedAt: null,
           estimatedCostUsd: null,
         },
         update: {
           status: "starting",
+          phase: PreviewPhases.PREPARING_SANDBOX,
           url: null,
           sandboxId: null,
+          detectedPort: null,
+          framework: null,
+          packageManager: null,
+          errorCode: null,
+          errorMessage: null,
           expiresAt,
           startedAt: null,
           estimatedCostUsd: null,
         },
       });
 
+      previewId = preview.id;
+
       eventService.publish(projectId, SseEvents.PREVIEW_STARTED, {
         previewId: preview.id,
-        message: "Provisioning E2B sandbox...",
+        message: "Preparing isolated sandbox...",
+        phase: PreviewPhases.PREPARING_SANDBOX,
         expiresAt: expiresAt.toISOString(),
       });
 
@@ -225,54 +348,26 @@ export class PreviewService {
       );
 
       const files = await vfsService.snapshot(projectId, userId);
-      const sandbox = await Sandbox.create({
-        apiKey: env.E2B_API_KEY,
-        template: env.E2B_PREVIEW_TEMPLATE,
-        timeoutMs: env.PREVIEW_SANDBOX_TIMEOUT_MS,
+
+      const result = await previewRunner.run({
+        projectId,
+        userId,
+        previewId: preview.id,
+        files: files.map((f) => ({ path: f.path, content: f.content })),
       });
 
-      await sandbox.files.write(
-        files.map((f) => ({
-          path: f.path,
-          data: f.content,
-        }))
-      );
-
-      const hasPrisma = files.some((f) => f.path === "prisma/schema.prisma");
-      if (hasPrisma) {
-        const prismaGen = await sandbox.commands.run("npx prisma generate 2>&1", {
-          timeoutMs: 120_000,
-        });
-        if (prismaGen.exitCode !== 0) {
-          throw new Error(`prisma generate failed: ${prismaGen.stderr || prismaGen.stdout}`);
-        }
-
-        const prismaPush = await sandbox.commands.run(
-          "npx prisma db push --accept-data-loss 2>&1",
-          { timeoutMs: 120_000 }
-        );
-        if (prismaPush.exitCode !== 0) {
-          throw new Error(`prisma db push failed: ${prismaPush.stderr || prismaPush.stdout}`);
-        }
-      }
-
-      await sandbox.commands.run(
-        `nohup npm run dev -- --hostname 0.0.0.0 --port ${PREVIEW_PORT} > /tmp/next-dev.log 2>&1 &`,
-        { timeoutMs: 15_000 }
-      );
-
-      await this.waitForDevServer(sandbox);
-
-      const host = sandbox.getHost(PREVIEW_PORT);
-      const previewUrl = host.startsWith("http") ? host : `https://${host}`;
       const readyAt = new Date();
 
       const ready = await prisma.preview.update({
         where: { projectId },
         data: {
           status: "ready",
-          url: previewUrl,
-          sandboxId: sandbox.sandboxId,
+          phase: PreviewPhases.PREVIEW_READY,
+          url: result.previewUrl,
+          sandboxId: result.sandboxId,
+          detectedPort: result.detectedPort,
+          framework: result.framework,
+          packageManager: result.packageManager,
           expiresAt,
           startedAt: readyAt,
         },
@@ -280,13 +375,15 @@ export class PreviewService {
 
       await prisma.project.update({
         where: { id: projectId },
-        data: { previewUrl },
+        data: { previewUrl: result.previewUrl },
       });
 
       eventService.publish(projectId, SseEvents.PREVIEW_READY, {
         previewId: ready.id,
-        previewUrl,
-        sandboxId: sandbox.sandboxId,
+        previewUrl: result.previewUrl,
+        sandboxId: result.sandboxId,
+        detectedPort: result.detectedPort,
+        phase: PreviewPhases.PREVIEW_READY,
         expiresAt: expiresAt.toISOString(),
       });
 
@@ -296,37 +393,67 @@ export class PreviewService {
         projectId,
         {
           previewId: ready.id,
-          sandboxId: sandbox.sandboxId,
+          sandboxId: result.sandboxId,
           provisionDurationMs: readyAt.getTime() - provisionStartedAt.getTime(),
         }
       );
 
       return toPreviewRecord(ready);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Preview provisioning failed";
+      const failedRow = previewId
+        ? await prisma.preview.findUnique({ where: { id: previewId }, select: { phase: true } })
+        : null;
+      const classified = previewRunner.wrapFailure(
+        err,
+        (failedRow?.phase as PreviewPhase) ?? PreviewPhases.PREPARING_SANDBOX
+      );
+      const message = classified.message;
 
       await prisma.preview.upsert({
         where: { projectId },
         create: {
           projectId,
           status: "error",
+          phase: PreviewPhases.FAILED,
           url: null,
           sandboxId: null,
+          errorCode: classified.code,
+          errorMessage: message,
         },
         update: {
           status: "error",
+          phase: PreviewPhases.FAILED,
           url: null,
+          errorCode: classified.code,
+          errorMessage: message,
         },
       });
 
+      if (previewId) {
+        await previewLogStore.append({
+          projectId,
+          previewId,
+          level: "error",
+          source: "system",
+          message,
+        });
+      }
+
       eventService.publish(projectId, SseEvents.PREVIEW_FAILED, {
+        previewId,
         message,
-        code: err instanceof PreviewError ? err.code : "PREVIEW_FAILED",
+        code: classified.code,
+        phase: PreviewPhases.FAILED,
       });
 
-      throw err instanceof PreviewError
-        ? err
-        : new PreviewError("PREVIEW_FAILED", message, 500);
+      eventService.publish(projectId, SseEvents.PREVIEW_PHASE, {
+        previewId,
+        phase: PreviewPhases.FAILED,
+        errorCode: classified.code,
+        errorMessage: message,
+      });
+
+      throw new PreviewError(classified.code, message, classified.status);
     } finally {
       this.running.delete(projectId);
     }
@@ -339,6 +466,23 @@ export class PreviewService {
     if (!preview) return;
 
     await this.forceStop(projectId, userId, {
+      reason: "manual",
+      sandboxId: preview.sandboxId,
+      startedAt: preview.startedAt,
+    });
+  }
+
+  async stopById(previewId: string, userId: string): Promise<void> {
+    const preview = await prisma.preview.findUnique({
+      where: { id: previewId },
+      include: { project: { select: { userId: true } } },
+    });
+
+    if (!preview || preview.project.userId !== userId) {
+      throw new PreviewError("PREVIEW_NOT_FOUND", "Preview not found", 404);
+    }
+
+    await this.forceStop(preview.projectId, userId, {
       reason: "manual",
       sandboxId: preview.sandboxId,
       startedAt: preview.startedAt,
@@ -416,29 +560,12 @@ export class PreviewService {
   async killSandbox(sandboxId: string): Promise<void> {
     if (!this.isConfigured()) return;
     try {
+      const { Sandbox } = await import("e2b");
       await Sandbox.kill(sandboxId, { apiKey: env.E2B_API_KEY });
     } catch (err) {
       console.warn(`[preview] Failed to kill sandbox ${sandboxId}:`, err);
     }
   }
-
-  private async waitForDevServer(sandbox: Sandbox): Promise<void> {
-    const deadline = Date.now() + DEV_SERVER_WAIT_MS;
-    while (Date.now() < deadline) {
-      const probe = await sandbox.commands.run(
-        `curl -sf http://127.0.0.1:${PREVIEW_PORT} > /dev/null 2>&1; echo $?`,
-        { timeoutMs: 10_000 }
-      );
-      const code = probe.stdout.trim();
-      if (code === "0") return;
-      await sleep(DEV_SERVER_POLL_MS);
-    }
-    throw new Error("Next.js dev server did not become ready in time");
-  }
-}
-
-function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
 }
 
 export const previewService = new PreviewService();

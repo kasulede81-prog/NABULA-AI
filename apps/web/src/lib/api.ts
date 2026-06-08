@@ -206,24 +206,80 @@ export class ApiClient {
         id: string;
         projectId: string;
         status: string;
+        phase?: string;
         previewUrl: string | null;
+        detectedPort?: number | null;
+        framework?: string | null;
+        packageManager?: string | null;
+        errorCode?: string | null;
+        errorMessage?: string | null;
         sandboxId: string | null;
         createdAt: string;
         updatedAt: string;
         expiresAt: string | null;
+        startedAt?: string | null;
       } | null;
     }>(`/projects/${projectId}/preview`);
   }
 
+  createPreview(projectId: string) {
+    return this.request<{
+      status: string;
+      previewId: string;
+      message: string;
+    }>("/previews/create", {
+      method: "POST",
+      body: JSON.stringify({ projectId }),
+    });
+  }
+
+  getPreviewStatus(previewId: string) {
+    return this.request<{
+      data: {
+        id: string;
+        projectId: string;
+        status: string;
+        phase: string;
+        previewUrl: string | null;
+        detectedPort: number | null;
+        framework: string | null;
+        packageManager: string | null;
+        errorCode: string | null;
+        errorMessage: string | null;
+        sandboxId: string | null;
+        expiresAt: string | null;
+        startedAt: string | null;
+        updatedAt: string;
+      };
+    }>(`/previews/${previewId}/status`);
+  }
+
+  getPreviewLogs(previewId: string, since?: string) {
+    const q = since ? `?since=${encodeURIComponent(since)}` : "";
+    return this.request<{
+      data: Array<{
+        id: string;
+        previewId: string;
+        level: string;
+        source: string;
+        message: string;
+        createdAt: string;
+      }>;
+    }>(`/previews/${previewId}/logs${q}`);
+  }
+
   startPreview(projectId: string) {
-    return this.request<{ status: string; message: string }>(
-      `/projects/${projectId}/preview`,
-      { method: "POST" }
-    );
+    return this.createPreview(projectId);
   }
 
   deletePreview(projectId: string) {
     return this.request<void>(`/projects/${projectId}/preview`, {
+      method: "DELETE",
+    });
+  }
+
+  deletePreviewById(previewId: string) {
+    return this.request<void>(`/previews/${previewId}`, {
       method: "DELETE",
     });
   }

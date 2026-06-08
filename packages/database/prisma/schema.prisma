@@ -40,6 +40,32 @@ enum PreviewStatus {
   error
 }
 
+enum PreviewPhase {
+  preparing_sandbox
+  installing_dependencies
+  building_project
+  starting_server
+  waiting_for_health_check
+  preview_ready
+  failed
+}
+
+enum PreviewLogLevel {
+  info
+  warn
+  error
+  stdout
+  stderr
+}
+
+enum PreviewLogSource {
+  system
+  install
+  build
+  runtime
+  health
+}
+
 enum PlanTier {
   free
   starter
@@ -213,13 +239,33 @@ model Preview {
   sandboxId        String?       @map("sandbox_id")
   url              String?
   status           PreviewStatus @default(starting)
+  phase            PreviewPhase  @default(preparing_sandbox)
+  detectedPort     Int?          @map("detected_port")
+  framework        String?
+  packageManager   String?       @map("package_manager")
+  errorCode        String?       @map("error_code")
+  errorMessage     String?       @map("error_message")
   expiresAt        DateTime?     @map("expires_at")
   startedAt        DateTime?     @map("started_at")
   estimatedCostUsd Float?        @map("estimated_cost_usd")
   createdAt        DateTime      @default(now()) @map("created_at")
   updatedAt        DateTime      @updatedAt @map("updated_at")
   project          Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  logs             PreviewLog[]
 
   @@index([status, expiresAt])
   @@map("previews")
+}
+
+model PreviewLog {
+  id        String           @id @default(uuid()) @db.Uuid
+  previewId String           @map("preview_id") @db.Uuid
+  level     PreviewLogLevel  @default(info)
+  source    PreviewLogSource @default(system)
+  message   String
+  createdAt DateTime         @default(now()) @map("created_at")
+  preview   Preview          @relation(fields: [previewId], references: [id], onDelete: Cascade)
+
+  @@index([previewId, createdAt])
+  @@map("preview_logs")
 }
