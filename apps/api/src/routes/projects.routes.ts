@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { createProjectSchema, updateProjectSchema } from "@nebula/shared";
+import { parseCursorQuery } from "../lib/cursor-pagination";
 import { projectService, ProjectError } from "../services/project.service";
 import { authenticate, type AuthenticatedRequest } from "../middleware/auth";
 import { requireQuota, consumeQuota } from "../middleware/quota";
@@ -10,8 +11,22 @@ export async function projectRoutes(app: FastifyInstance) {
 
   app.get("/projects", async (request) => {
     const { userId } = request as AuthenticatedRequest;
-    const projects = await projectService.list(userId);
-    return { data: projects };
+    const query = request.query as {
+      workspaceId?: string;
+      scope?: "personal" | "all";
+      cursor?: string;
+      limit?: string;
+    };
+    const pagination = parseCursorQuery(query);
+    const page = await projectService.list(
+      userId,
+      {
+        workspaceId: query.workspaceId,
+        scope: query.scope ?? "all",
+      },
+      pagination
+    );
+    return { data: page.items, nextCursor: page.nextCursor };
   });
 
   app.post(

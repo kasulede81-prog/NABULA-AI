@@ -12,6 +12,10 @@ interface Overview {
   totalUsers: number;
   activeUsers: number;
   totalProjects: number;
+  totalWorkspaces?: number;
+  activeWorkspaces?: number;
+  workspaceMembers?: number;
+  workspaceProjects?: number;
   projectsCreatedToday: number;
   totalBuilds: number;
   successfulBuilds: number;
@@ -95,6 +99,14 @@ export default function AdminOverviewPage() {
           label="Est. AI Cost"
           value={`$${data.estimatedAiCostUsd.toFixed(2)}`}
         />
+        {data.totalWorkspaces !== undefined && (
+          <>
+            <TrendStatCard label="Total Workspaces" value={data.totalWorkspaces} />
+            <TrendStatCard label="Active Workspaces (30d)" value={data.activeWorkspaces ?? 0} />
+            <TrendStatCard label="Workspace Members" value={data.workspaceMembers ?? 0} />
+            <TrendStatCard label="Workspace Projects" value={data.workspaceProjects ?? 0} />
+          </>
+        )}
       </div>
     </div>
   );

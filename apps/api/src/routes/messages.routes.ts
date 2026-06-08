@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { createMessageSchema } from "@nebula/shared";
+import { parseCursorQuery } from "../lib/cursor-pagination";
 import { messageService } from "../services/message.service";
 import { projectService, ProjectError } from "../services/project.service";
 import { authenticate, type AuthenticatedRequest } from "../middleware/auth";
@@ -14,8 +15,11 @@ export async function messageRoutes(app: FastifyInstance) {
     const { projectId } = request.params as { projectId: string };
 
     try {
-      const messages = await messageService.list(projectId, userId);
-      return reply.send({ data: messages });
+      const pagination = parseCursorQuery(
+        request.query as { cursor?: string; limit?: string }
+      );
+      const page = await messageService.list(projectId, userId, pagination);
+      return reply.send({ data: page.items, nextCursor: page.nextCursor });
     } catch (err) {
       if (err instanceof ProjectError) {
         return reply.status(err.status).send({

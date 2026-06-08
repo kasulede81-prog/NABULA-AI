@@ -44,6 +44,23 @@ export class ApiClient {
     return data as T;
   }
 
+  /** Fetches all cursor pages for backward-compatible full lists. */
+  private async fetchAllCursorPages<T>(
+    buildPath: (cursor?: string) => string
+  ): Promise<T[]> {
+    const all: T[] = [];
+    let cursor: string | undefined;
+    do {
+      const res = await this.request<{
+        data: T[];
+        nextCursor?: string | null;
+      }>(buildPath(cursor));
+      all.push(...res.data);
+      cursor = res.nextCursor ?? undefined;
+    } while (cursor);
+    return all;
+  }
+
   register(email: string, password: string, name: string) {
     return this.request<{
       user: { id: string; email: string; name: string };
@@ -306,22 +323,32 @@ export class ApiClient {
     );
   }
 
-  listProjects() {
-    return this.request<{
-      data: Array<{
-        id: string;
-        name: string;
-        slug: string;
-        prompt: string;
-        status: string;
-        previewUrl: string | null;
-        buildCount: number;
-        createdAt: string;
-      }>;
-    }>("/projects");
+  async listProjects(opts?: { workspaceId?: string; scope?: "personal" | "all" }) {
+    const base = new URLSearchParams();
+    if (opts?.workspaceId) base.set("workspaceId", opts.workspaceId);
+    if (opts?.scope) base.set("scope", opts.scope);
+    const prefix = base.toString();
+    const data = await this.fetchAllCursorPages<{
+      id: string;
+      name: string;
+      slug: string;
+      prompt: string;
+      status: string;
+      previewUrl: string | null;
+      buildCount: number;
+      workspaceId: string | null;
+      visibility: string;
+      createdAt: string;
+    }>((cursor) => {
+      const q = new URLSearchParams(prefix);
+      if (cursor) q.set("cursor", cursor);
+      const suffix = q.toString() ? `?${q}` : "";
+      return `/projects${suffix}`;
+    });
+    return { data };
   }
 
-  createProject(name: string, prompt: string) {
+  createProject(name: string, prompt: string, workspaceId?: string) {
     return this.request<{
       id: string;
       name: string;
@@ -330,8 +357,116 @@ export class ApiClient {
       status: string;
     }>("/projects", {
       method: "POST",
-      body: JSON.stringify({ name, prompt }),
+      body: JSON.stringify({ name, prompt, workspaceId }),
     });
+  }
+
+  listWorkspaces() {
+    return this.request<{
+      data: Array<{
+        id: string;
+        name: string;
+        slug: string;
+        ownerId: string;
+        plan: string;
+        role: string;
+        membersCount: number;
+        projectsCount: number;
+        createdAt: string;
+      }>;
+    }>("/workspaces");
+  }
+
+  createWorkspace(name: string) {
+    return this.request<{
+      data: {
+        id: string;
+        name: string;
+        slug: string;
+        plan: string;
+      };
+    }>("/workspaces", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+  }
+
+  getWorkspace(id: string) {
+    return this.request<{
+      data: {
+        id: string;
+        name: string;
+        slug: string;
+        ownerId: string;
+        plan: string;
+        role: string;
+        membersCount: number;
+        projectsCount: number;
+        members: Array<{
+          id: string;
+          userId: string;
+          name: string;
+          email: string;
+          role: string;
+          createdAt: string;
+        }>;
+        invitations: Array<{
+          id: string;
+          email: string;
+          role: string;
+          status: string;
+          expiresAt: string;
+        }>;
+      };
+    }>(`/workspaces/${id}`);
+  }
+
+  updateWorkspace(id: string, name: string) {
+    return this.request<{ data: { id: string; name: string } }>(`/workspaces/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    });
+  }
+
+  deleteWorkspace(id: string) {
+    return this.request<void>(`/workspaces/${id}`, { method: "DELETE" });
+  }
+
+  transferWorkspaceOwnership(id: string, newOwnerUserId: string) {
+    return this.request<{ data: { ok: boolean } }>(`/workspaces/${id}/transfer`, {
+      method: "POST",
+      body: JSON.stringify({ newOwnerUserId }),
+    });
+  }
+
+  inviteWorkspaceMember(id: string, email: string, role: "admin" | "member" = "member") {
+    return this.request<{
+      data: { id: string; email: string; role: string; token: string; expiresAt: string };
+    }>(`/workspaces/${id}/invite`, {
+      method: "POST",
+      body: JSON.stringify({ email, role }),
+    });
+  }
+
+  acceptWorkspaceInvite(id: string, token: string) {
+    return this.request<{ data: { ok: boolean; role: string } }>(
+      `/workspaces/${id}/accept`,
+      { method: "POST", body: JSON.stringify({ token }) }
+    );
+  }
+
+  updateWorkspaceMemberRole(workspaceId: string, memberId: string, role: "admin" | "member") {
+    return this.request<{ data: { id: string; role: string } }>(
+      `/workspaces/${workspaceId}/members/${memberId}`,
+      { method: "PATCH", body: JSON.stringify({ role }) }
+    );
+  }
+
+  removeWorkspaceMember(workspaceId: string, memberId: string) {
+    return this.request<{ data: { ok: boolean } }>(
+      `/workspaces/${workspaceId}/members/${memberId}`,
+      { method: "DELETE" }
+    );
   }
 
   getProject(id: string) {
@@ -350,15 +485,19 @@ export class ApiClient {
     return this.request<void>(`/projects/${id}`, { method: "DELETE" });
   }
 
-  listMessages(projectId: string) {
-    return this.request<{
-      data: Array<{
-        id: string;
-        role: string;
-        content: string;
-        createdAt: string;
-      }>;
-    }>(`/projects/${projectId}/messages`);
+  async listMessages(projectId: string) {
+    const data = await this.fetchAllCursorPages<{
+      id: string;
+      role: string;
+      content: string;
+      createdAt: string;
+    }>((cursor) => {
+      const suffix = cursor
+        ? `?cursor=${encodeURIComponent(cursor)}`
+        : "";
+      return `/projects/${projectId}/messages${suffix}`;
+    });
+    return { data };
   }
 
   sendMessage(projectId: string, content: string) {
@@ -373,10 +512,18 @@ export class ApiClient {
     });
   }
 
-  listFiles(projectId: string) {
-    return this.request<{
-      data: Array<{ path: string; version: number; createdAt: string }>;
-    }>(`/projects/${projectId}/files`);
+  async listFiles(projectId: string) {
+    const data = await this.fetchAllCursorPages<{
+      path: string;
+      version: number;
+      createdAt: string;
+    }>((cursor) => {
+      const suffix = cursor
+        ? `?cursor=${encodeURIComponent(cursor)}`
+        : "";
+      return `/projects/${projectId}/files${suffix}`;
+    });
+    return { data };
   }
 
   readFile(projectId: string, path: string) {

@@ -1,4 +1,9 @@
 import { prisma } from "../lib/prisma";
+import {
+  buildCursorPage,
+  cursorWhereAsc,
+  type ParsedCursorQuery,
+} from "../lib/cursor-pagination";
 import { projectService } from "./project.service";
 import { eventService } from "./event.service";
 import { SseEvents } from "@nebula/shared";
@@ -62,12 +67,22 @@ export function applyMessagePipelineScheduling(
 }
 
 export class MessageService {
-  async list(projectId: string, userId: string) {
+  async list(
+    projectId: string,
+    userId: string,
+    pagination?: ParsedCursorQuery
+  ) {
     await projectService.get(projectId, userId);
 
-    return prisma.message.findMany({
-      where: { projectId },
-      orderBy: { createdAt: "asc" },
+    const limit = pagination?.limit ?? 50;
+    const cursorFilter = pagination?.cursor
+      ? cursorWhereAsc(pagination.cursor)
+      : {};
+
+    const rows = await prisma.message.findMany({
+      where: { projectId, ...cursorFilter },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      take: limit + 1,
       select: {
         id: true,
         role: true,
@@ -75,6 +90,8 @@ export class MessageService {
         createdAt: true,
       },
     });
+
+    return buildCursorPage(rows, limit);
   }
 
   async create(projectId: string, userId: string, input: CreateMessageInput) {

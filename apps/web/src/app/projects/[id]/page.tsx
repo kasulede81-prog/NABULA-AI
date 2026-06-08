@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useSSE } from "@/hooks/useSSE";
 import { ChatPanel } from "@/components/chat/ChatPanel";
@@ -14,6 +14,15 @@ import { ProgressFeed } from "@/components/workspace/ProgressFeed";
 import { GitHubExportPanel } from "@/components/workspace/GitHubExportPanel";
 import { SseEvents } from "@nebula/shared";
 
+function ProjectHeaderSkeleton() {
+  return (
+    <div className="animate-pulse space-y-2">
+      <div className="h-5 w-48 rounded bg-surface-border" />
+      <div className="h-3 w-24 rounded bg-surface-border" />
+    </div>
+  );
+}
+
 export default function ProjectWorkspacePage({
   params,
 }: {
@@ -25,21 +34,50 @@ export default function ProjectWorkspacePage({
     status: string;
     prompt: string;
   } | null>(null);
+  const [projectLoading, setProjectLoading] = useState(true);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [editorTabs, setEditorTabs] = useState<EditorTab[]>([]);
   const [fileRefreshKey, setFileRefreshKey] = useState(0);
   const { events, connected } = useSSE(projectId);
+  const fileRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const refreshFiles = useCallback(() => {
     setFileRefreshKey((k) => k + 1);
   }, []);
 
+  const scheduleFileRefresh = useCallback(() => {
+    if (fileRefreshTimer.current) {
+      clearTimeout(fileRefreshTimer.current);
+    }
+    fileRefreshTimer.current = setTimeout(() => {
+      refreshFiles();
+      fileRefreshTimer.current = null;
+    }, 500);
+  }, [refreshFiles]);
+
   useEffect(() => {
-    api.getProject(projectId).then(setProject);
+    setProjectLoading(true);
+    api
+      .getProject(projectId)
+      .then(setProject)
+      .catch(() => setProject(null))
+      .finally(() => setProjectLoading(false));
   }, [projectId]);
 
+  useEffect(() => {
+    return () => {
+      if (fileRefreshTimer.current) {
+        clearTimeout(fileRefreshTimer.current);
+      }
+    };
+  }, []);
+
+  const projectStatus = project?.status ?? "draft";
+
   const handleStatusChange = useCallback((status: string) => {
-    setProject((prev) => (prev ? { ...prev, status } : prev));
+    setProject((prev) =>
+      prev ? { ...prev, status } : { name: "", status, prompt: "" }
+    );
   }, []);
 
   const openFile = useCallback(
@@ -77,54 +115,65 @@ export default function ProjectWorkspacePage({
 
     if (
       last.type === SseEvents.FILE_CREATED ||
-      last.type === SseEvents.FILE_UPDATED ||
-      last.type === SseEvents.FILE_DELETED
+      last.type === SseEvents.FILE_UPDATED
     ) {
-      refreshFiles();
+      scheduleFileRefresh();
       const path = (last.data as { path?: string }).path;
-      if (path && last.type === SseEvents.FILE_DELETED) {
-        setEditorTabs((prev) => prev.filter((t) => t.path !== path));
-        if (selectedPath === path) setSelectedPath(null);
-      }
-      if (path && last.type !== SseEvents.FILE_DELETED) {
+      if (path) {
         void openFile(path);
       }
     }
-  }, [events, refreshFiles, handleStatusChange, openFile, selectedPath]);
 
-  if (!project) {
-    return (
-      <div className="flex h-[calc(100vh-3.5rem)] items-center justify-center">
-        <p className="text-gray-500">Loading workspace...</p>
-      </div>
-    );
-  }
+    if (last.type === SseEvents.FILE_DELETED) {
+      refreshFiles();
+      const path = (last.data as { path?: string }).path;
+      if (path) {
+        setEditorTabs((prev) => prev.filter((t) => t.path !== path));
+        if (selectedPath === path) setSelectedPath(null);
+      }
+    }
+  }, [
+    events,
+    scheduleFileRefresh,
+    refreshFiles,
+    handleStatusChange,
+    openFile,
+    selectedPath,
+  ]);
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)] flex-col">
       <div className="flex items-center justify-between border-b border-surface-border px-6 py-3">
         <div>
-          <h1 className="font-semibold text-white">{project.name}</h1>
-          <p className="text-xs text-gray-500">
-            Status:{" "}
-            <span
-              className={
-                project.status === "building"
-                  ? "text-yellow-400 animate-pulse"
-                  : project.status === "ready"
-                    ? "text-green-400"
-                    : project.status === "failed"
-                      ? "text-red-400"
-                      : "text-nebula-500"
-              }
-            >
-              {project.status}
-            </span>
-          </p>
+          {projectLoading && !project ? (
+            <ProjectHeaderSkeleton />
+          ) : (
+            <>
+              <h1 className="font-semibold text-white">
+                {project?.name ?? "Project"}
+              </h1>
+              <p className="text-xs text-gray-500">
+                Status:{" "}
+                <span
+                  className={
+                    projectStatus === "building"
+                      ? "text-yellow-400 animate-pulse"
+                      : projectStatus === "ready"
+                        ? "text-green-400"
+                        : projectStatus === "failed"
+                          ? "text-red-400"
+                          : "text-nebula-500"
+                  }
+                >
+                  {projectStatus}
+                </span>
+              </p>
+            </>
+          )}
         </div>
         <GitHubExportPanel
           projectId={projectId}
-          projectStatus={project.status}
+          projectStatus={projectStatus}
           sseEvents={events}
         />
       </div>
@@ -154,8 +203,9 @@ export default function ProjectWorkspacePage({
           ) : (
             <PreviewPanel
               projectId={projectId}
-              projectStatus={project.status}
+              projectStatus={projectStatus}
               sseEvents={events}
+              sseConnected={connected}
             />
           )}
         </section>
@@ -163,7 +213,7 @@ export default function ProjectWorkspacePage({
         <aside className="overflow-hidden">
           <ChatPanel
             projectId={projectId}
-            projectStatus={project.status}
+            projectStatus={projectStatus}
             sseEvents={events}
             onStatusChange={handleStatusChange}
           />

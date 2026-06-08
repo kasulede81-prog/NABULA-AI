@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { renameFileSchema, writeFileSchema } from "@nebula/shared";
+import { decodePathCursor, parseCursorQuery } from "../lib/cursor-pagination";
 import { vfsService, VfsError } from "../services/vfs.service";
 import {
   analyticsService,
@@ -17,8 +18,13 @@ export async function fileRoutes(app: FastifyInstance) {
     const { projectId } = request.params as { projectId: string };
 
     try {
-      const tree = await vfsService.listTree(projectId, userId);
-      return reply.send({ data: tree });
+      const query = request.query as { cursor?: string; limit?: string };
+      const pagination = parseCursorQuery(query);
+      const page = await vfsService.listTreePaginated(projectId, userId, {
+        ...pagination,
+        pathCursor: decodePathCursor(query.cursor),
+      });
+      return reply.send({ data: page.items, nextCursor: page.nextCursor });
     } catch (err) {
       if (err instanceof ProjectError) {
         return reply.status(err.status).send({

@@ -1,13 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { useWorkspace } from "@/hooks/useWorkspace";
 
 export default function NewProjectPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { activeWorkspaceId, activeWorkspace } = useWorkspace();
+  const workspaceId = searchParams.get("workspaceId") ?? activeWorkspaceId ?? undefined;
+
   const [name, setName] = useState("");
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
@@ -21,7 +26,8 @@ export default function NewProjectPage() {
     try {
       const project = await api.createProject(
         name || "Untitled Project",
-        prompt
+        prompt,
+        workspaceId
       );
       router.push(`/projects/${project.id}`);
     } catch (err) {
@@ -36,7 +42,12 @@ export default function NewProjectPage() {
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-8">
-      <h1 className="mb-6 text-2xl font-bold text-white">New Project</h1>
+      <h1 className="mb-2 text-2xl font-bold text-white">New Project</h1>
+      {workspaceId && activeWorkspace && (
+        <p className="mb-6 text-sm text-gray-500">
+          Creating in workspace: <span className="text-gray-300">{activeWorkspace.name}</span>
+        </p>
+      )}
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input
           label="Project Name"

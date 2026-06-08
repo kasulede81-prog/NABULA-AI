@@ -25,6 +25,7 @@ import type { LLMMessage, LLMToolDefinition } from "@nebula/shared";
 import { agentRunService } from "./agent-run.service";
 import { eventService } from "./event.service";
 import { vfsService } from "./vfs.service";
+import { projectService } from "./project.service";
 
 const MAX_TOOL_CALLS = 20;
 const BUILD_TIMEOUT_MS = 8 * 60 * 1000;
@@ -121,11 +122,9 @@ export class BuilderService {
     userId: string,
     options: { userMessage?: string; errorContext?: string; attempt?: number } = {}
   ) {
-    const project = await prisma.project.findFirst({
-      where: { id: projectId, userId },
-    });
+    const project = await projectService.get(projectId, userId);
 
-    if (!project?.specJson) {
+    if (!project.specJson) {
       throw new AgentError(
         NonRetryableErrorCodes.NO_SPEC,
         "Project has no specification. Run clarifier first.",

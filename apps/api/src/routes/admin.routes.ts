@@ -68,11 +68,15 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 
   app.get("/admin/dashboard/overview", async () => {
-    const [legacy, extended] = await Promise.all([
+    const { workspaceAdminService } = await import(
+      "../services/collaboration/workspace-admin.service"
+    );
+    const [legacy, extended, workspaces] = await Promise.all([
       adminDashboardService.getOverview(),
       adminPhase2Service.getOverviewExtended(),
+      workspaceAdminService.getStats(),
     ]);
-    return { data: { ...legacy, ...extended } };
+    return { data: { ...legacy, ...extended, ...workspaces } };
   });
 
   app.get("/admin/users", async (request) => {

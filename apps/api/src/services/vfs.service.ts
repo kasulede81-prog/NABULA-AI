@@ -1,4 +1,9 @@
 import { prisma } from "../lib/prisma";
+import {
+  buildPathCursorPage,
+  decodePathCursor,
+  type ParsedCursorQuery,
+} from "../lib/cursor-pagination";
 import { projectService } from "./project.service";
 import { eventService } from "./event.service";
 import {
@@ -31,13 +36,34 @@ export class VfsService {
   async listTree(projectId: string, userId: string): Promise<FileNode[]> {
     await projectService.get(projectId, userId);
 
-    const files = await prisma.file.findMany({
+    return prisma.file.findMany({
       where: { projectId },
       orderBy: { path: "asc" },
       select: { path: true, version: true, createdAt: true },
     });
+  }
 
-    return files;
+  async listTreePaginated(
+    projectId: string,
+    userId: string,
+    pagination?: ParsedCursorQuery & { pathCursor?: string }
+  ) {
+    await projectService.get(projectId, userId);
+
+    const limit = pagination?.limit ?? 50;
+    const pathCursor = pagination?.pathCursor;
+
+    const rows = await prisma.file.findMany({
+      where: {
+        projectId,
+        ...(pathCursor ? { path: { gt: pathCursor } } : {}),
+      },
+      orderBy: { path: "asc" },
+      take: limit + 1,
+      select: { path: true, version: true, createdAt: true },
+    });
+
+    return buildPathCursorPage(rows, limit);
   }
 
   async readFile(projectId: string, userId: string, path: string) {

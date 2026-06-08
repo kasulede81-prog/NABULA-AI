@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
+import { useWorkspace } from "@/hooks/useWorkspace";
 
 interface Project {
   id: string;
@@ -11,25 +12,50 @@ interface Project {
   slug: string;
   prompt: string;
   status: string;
+  visibility: string;
+  workspaceId: string | null;
   createdAt: string;
 }
 
 export default function ProjectsPage() {
+  const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.listProjects(
+        activeWorkspaceId
+          ? { workspaceId: activeWorkspaceId }
+          : { scope: "personal" }
+      );
+      setProjects(res.data);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeWorkspaceId]);
+
   useEffect(() => {
-    api
-      .listProjects()
-      .then((res) => setProjects(res.data))
-      .finally(() => setLoading(false));
-  }, []);
+    void load();
+  }, [load]);
+
+  const contextLabel = activeWorkspace ? activeWorkspace.name : "Personal";
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
       <div className="mb-8 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Projects</h1>
-        <Link href="/projects/new">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Projects</h1>
+          <p className="mt-1 text-sm text-gray-500">Showing {contextLabel} projects</p>
+        </div>
+        <Link
+          href={
+            activeWorkspaceId
+              ? `/projects/new?workspaceId=${activeWorkspaceId}`
+              : "/projects/new"
+          }
+        >
           <Button>New Project</Button>
         </Link>
       </div>
@@ -38,9 +64,15 @@ export default function ProjectsPage() {
         <p className="text-gray-500">Loading projects...</p>
       ) : projects.length === 0 ? (
         <div className="rounded-xl border border-dashed border-surface-border p-12 text-center">
-          <p className="mb-4 text-gray-400">No projects yet</p>
-          <Link href="/projects/new">
-            <Button>Create your first project</Button>
+          <p className="mb-4 text-gray-400">No projects in {contextLabel}</p>
+          <Link
+            href={
+              activeWorkspaceId
+                ? `/projects/new?workspaceId=${activeWorkspaceId}`
+                : "/projects/new"
+            }
+          >
+            <Button>Create a project</Button>
           </Link>
         </div>
       ) : (

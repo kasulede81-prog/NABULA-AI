@@ -30,6 +30,7 @@ interface PreviewPanelProps {
   projectId: string;
   projectStatus: string;
   sseEvents: SseMessage[];
+  sseConnected?: boolean;
 }
 
 const ACTIVE_PHASES: PreviewPhase[] = [
@@ -63,6 +64,7 @@ export function PreviewPanel({
   projectId,
   projectStatus,
   sseEvents,
+  sseConnected = false,
 }: PreviewPanelProps) {
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -144,6 +146,7 @@ export function PreviewPanel({
 
   useEffect(() => {
     if (!preview?.id || preview.status !== "starting") return;
+    if (sseConnected) return;
 
     const interval = setInterval(() => {
       void fetchLogs(preview.id, true);
@@ -172,7 +175,7 @@ export function PreviewPanel({
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [preview?.id, preview?.status, fetchLogs]);
+  }, [preview?.id, preview?.status, fetchLogs, sseConnected]);
 
   useEffect(() => {
     const recent = sseEvents.slice(-20);

@@ -13,14 +13,18 @@ import { githubRoutes } from "./routes/github.routes";
 import { billingRoutes } from "./routes/billing.routes";
 import { supportRoutes } from "./routes/support.routes";
 import { stabilityRoutes } from "./routes/stability.routes";
+import { workspaceRoutes } from "./routes/workspace.routes";
 import { adminRoutes } from "./routes/admin.routes";
 import { errorMonitorService } from "./services/stability/error-monitor.service";
+import { registerRequestTiming } from "./middleware/request-timing";
 
 export async function buildApp() {
   const app = Fastify({
     logger: true,
     bodyLimit: 2 * 1024 * 1024,
   });
+
+  await registerRequestTiming(app);
 
   await app.register(cors, {
     origin: env.WEB_URL,
@@ -41,6 +45,7 @@ export async function buildApp() {
       await v1.register(billingRoutes);
       await v1.register(supportRoutes);
       await v1.register(stabilityRoutes);
+      await v1.register(workspaceRoutes);
       await v1.register(adminRoutes);
     },
     { prefix: "/v1" }

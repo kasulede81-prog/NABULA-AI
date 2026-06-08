@@ -8,6 +8,7 @@ import { requireQuota, consumeQuota } from "../middleware/quota";
 import { QuotaExceededError } from "../services/billing/billing.service";
 import { rateLimitByUser } from "../middleware/rate-limit";
 import { captureRouteError } from "../services/stability/error-capture";
+import { githubTrackingService } from "../services/collaboration/github-tracking.service";
 
 const connectSchema = z.object({
   token: z.string().min(1, "GitHub token is required"),
@@ -204,6 +205,7 @@ export async function githubRoutes(app: FastifyInstance) {
         try {
           await consumeQuota(userId, "github_export", projectId);
           const result = await githubService.createRepository(projectId, userId);
+          await githubTrackingService.recordCreated(projectId, userId);
           return reply.status(201).send({ data: result });
         } catch (err) {
           if (err instanceof QuotaExceededError) {
@@ -222,9 +224,10 @@ export async function githubRoutes(app: FastifyInstance) {
 
       try {
         const result = await githubService.syncRepository(projectId, userId);
+        await githubTrackingService.recordSynced(projectId, userId);
         return { data: result };
       } catch (err) {
-        return handleGithubError(err, reply);
+        return handleGithubError(err, reply, { userId, projectId });
       }
     });
 
@@ -253,6 +256,7 @@ export async function githubRoutes(app: FastifyInstance) {
         try {
           await consumeQuota(userId, "github_export", projectId);
           const result = await githubService.exportProject(projectId, userId);
+          await githubTrackingService.recordCreated(projectId, userId);
           return reply.status(201).send({ data: result });
         } catch (err) {
           if (err instanceof QuotaExceededError) {

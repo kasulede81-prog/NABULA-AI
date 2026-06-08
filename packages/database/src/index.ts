@@ -17,4 +17,8 @@ export type {
   FeedbackCategory,
   FeedbackStatus,
   StabilityAuditAction,
+  WorkspaceMemberRole,
+  WorkspaceInvitationStatus,
+  ProjectVisibility,
+  WorkspaceAuditAction,
 } from "@prisma/client";

@@ -39,6 +39,8 @@ export class GithubRepositoryService {
       defaultBranch: repo.defaultBranch,
       lastCommitSha: repo.lastCommitSha,
       lastSyncedAt: repo.lastSyncedAt?.toISOString() ?? null,
+      createdByUserId: repo.createdByUserId,
+      lastSyncedByUserId: repo.lastSyncedByUserId,
       createdAt: repo.createdAt.toISOString(),
     };
   }
@@ -279,19 +281,9 @@ export class GithubRepositoryService {
       throw new GithubError("REPOSITORY_NOT_FOUND", "No GitHub repository linked", 404);
     }
 
-    if (repo.project.userId !== userId) {
-      throw new GithubError("FORBIDDEN", "You do not own this project", 403);
-    }
+    await projectService.get(projectId, userId);
 
-    if (repo.connection.userId !== userId) {
-      throw new GithubError(
-        "FORBIDDEN",
-        "Repository is linked to a different GitHub connection",
-        403
-      );
-    }
-
-    const { token } = await githubAuthService.getDecryptedToken(userId);
+    const { token } = await githubAuthService.getDecryptedToken(repo.connection.userId);
     const owner = repo.connection.username;
     const expectedPrefix = `${owner}/`;
     if (!repo.repositoryName.startsWith(expectedPrefix)) {

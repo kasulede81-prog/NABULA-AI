@@ -132,9 +132,13 @@ export class PreviewService {
   async getById(previewId: string, userId: string): Promise<PreviewRecord | null> {
     const row = await prisma.preview.findUnique({
       where: { id: previewId },
-      include: { project: { select: { userId: true } } },
     });
-    if (!row || row.project.userId !== userId) return null;
+    if (!row) return null;
+    try {
+      await projectService.get(row.projectId, userId);
+    } catch {
+      return null;
+    }
     return toPreviewRecord(row);
   }
 
@@ -475,12 +479,13 @@ export class PreviewService {
   async stopById(previewId: string, userId: string): Promise<void> {
     const preview = await prisma.preview.findUnique({
       where: { id: previewId },
-      include: { project: { select: { userId: true } } },
     });
 
-    if (!preview || preview.project.userId !== userId) {
+    if (!preview) {
       throw new PreviewError("PREVIEW_NOT_FOUND", "Preview not found", 404);
     }
+
+    await projectService.get(preview.projectId, userId);
 
     await this.forceStop(preview.projectId, userId, {
       reason: "manual",
