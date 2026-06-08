@@ -17,6 +17,7 @@
     "verify:path-security": "pnpm --filter @nebula/api exec tsx ../../scripts/verify-path-security.ts",
     "verify:retry": "pnpm --filter @nebula/api exec tsx ../../scripts/verify-retry-classification.ts",
     "verify:clarifier-lock": "pnpm --filter @nebula/api exec tsx ../../scripts/verify-clarifier-lock.ts",
+    "verify:message-recovery": "pnpm --filter @nebula/api exec tsx ../../scripts/verify-message-recovery.ts",
     "verify:normalize-write-files": "pnpm --filter @nebula/api exec tsx ../../scripts/verify-normalize-write-files.ts",
     "verify:write-files-parser": "pnpm --filter @nebula/api exec tsx ../../scripts/verify-write-files-parser.ts",
     "verify:encoding-sanitize": "pnpm --filter @nebula/api exec tsx ../../scripts/verify-encoding-sanitize.ts",
