@@ -201,6 +201,27 @@ enum ProjectVisibility {
   workspace
 }
 
+enum DeployTarget {
+  vercel
+  netlify
+  mock
+}
+
+enum DeployStatus {
+  queued
+  building
+  deploying
+  ready
+  error
+  canceled
+}
+
+enum DomainStatus {
+  pending
+  active
+  failed
+}
+
 enum WorkspaceAuditAction {
   workspace_created
   workspace_deleted
@@ -578,6 +599,11 @@ model Project {
   preview          Preview?
   analyticsEvents  AnalyticsEvent[]
   githubRepository GithubRepository?
+  envVars          ProjectEnvVar[]
+  deployments      Deployment[]
+  domains          ProjectDomain[]
+  notes            ProjectNote[]
+  recordings       ProjectRecording[]
 
   @@unique([userId, slug])
   @@unique([workspaceId, slug])
@@ -586,6 +612,88 @@ model Project {
   @@index([status])
   @@index([createdAt])
   @@map("projects")
+}
+
+model ProjectEnvVar {
+  id          String   @id @default(uuid()) @db.Uuid
+  projectId   String   @map("project_id") @db.Uuid
+  key         String
+  value       String
+  environment String   @default("production")
+  isSecret    Boolean  @default(true) @map("is_secret")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, key, environment])
+  @@index([projectId])
+  @@map("project_env_vars")
+}
+
+model Deployment {
+  id            String       @id @default(uuid()) @db.Uuid
+  projectId     String       @map("project_id") @db.Uuid
+  triggeredById String?      @map("triggered_by_id") @db.Uuid
+  target        DeployTarget @default(mock)
+  status        DeployStatus @default(queued)
+  url           String?
+  commitMessage String?      @map("commit_message")
+  branch        String       @default("main")
+  externalId    String?      @map("external_id")
+  logs          Json         @default("[]")
+  envSnapshot   Json         @default("{}") @map("env_snapshot")
+  error         String?
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+  project       Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt(sort: Desc)])
+  @@map("deployments")
+}
+
+model ProjectDomain {
+  id        String       @id @default(uuid()) @db.Uuid
+  projectId String       @map("project_id") @db.Uuid
+  host      String
+  status    DomainStatus @default(pending)
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+  project   Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, host])
+  @@index([projectId])
+  @@map("project_domains")
+}
+
+model ProjectNote {
+  id        String   @id @default(uuid()) @db.Uuid
+  projectId String   @map("project_id") @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  title     String
+  content   String   @default("")
+  tags      String[] @default([])
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, updatedAt(sort: Desc)])
+  @@map("project_notes")
+}
+
+model ProjectRecording {
+  id              String   @id @default(uuid()) @db.Uuid
+  projectId       String   @map("project_id") @db.Uuid
+  userId          String?  @map("user_id") @db.Uuid
+  title           String
+  durationSeconds Int      @default(0) @map("duration_seconds")
+  transcript      String   @default("")
+  audioUrl        String?  @map("audio_url")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt(sort: Desc)])
+  @@map("project_recordings")
 }
 
 model Message {

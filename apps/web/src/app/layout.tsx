@@ -2,10 +2,11 @@ import type { Metadata } from "next";
 import "../config/supabase";
 import "./globals.css";
 import { AppProviders } from "@/components/providers/AppProviders";
+import { BRAND_NAME, BRAND_TAGLINE } from "@/lib/brand";
 
 export const metadata: Metadata = {
-  title: "Nebula AI",
-  description: "Describe your app. Watch it get built.",
+  title: BRAND_NAME,
+  description: BRAND_TAGLINE,
 };
 
 export default function RootLayout({

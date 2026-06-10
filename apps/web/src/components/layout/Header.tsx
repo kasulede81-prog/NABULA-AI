@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/Button";
 import { api } from "@/lib/api";
 import { useWorkspace } from "@/hooks/useWorkspace";
+import { BrandTitle } from "@/components/brand/BrandMark";
 
 export function Header() {
   const { user, logout } = useAuth();
@@ -36,7 +37,7 @@ export function Header() {
   return (
     <header className="flex h-14 items-center justify-between border-b border-surface-border px-6">
       <Link href="/projects" className="text-lg font-bold text-white">
-        Nebula <span className="text-nebula-500">AI</span>
+        <BrandTitle />
       </Link>
 
       {user && (

@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/Button";
+import { BrandHero } from "@/components/brand/BrandMark";
+import { BRAND_TAGLINE } from "@/lib/brand";
 
 export default function HomePage() {
   const { user, loading } = useAuth();
@@ -24,12 +26,8 @@ export default function HomePage() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center px-4">
-      <h1 className="mb-4 text-5xl font-bold text-white">
-        Nebula <span className="text-nebula-500">AI</span>
-      </h1>
-      <p className="mb-8 max-w-md text-center text-gray-400">
-        Describe your app in plain English. Watch it get built.
-      </p>
+      <BrandHero className="mb-4 text-5xl" />
+      <p className="mb-8 max-w-md text-center text-gray-400">{BRAND_TAGLINE}</p>
       <div className="flex gap-4">
         <Link href="/register">
           <Button>Get Started</Button>

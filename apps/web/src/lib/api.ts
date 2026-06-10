@@ -478,6 +478,7 @@ export class ApiClient {
       status: string;
       previewUrl: string | null;
       buildCount: number;
+      workspaceId: string | null;
     }>(`/projects/${id}`);
   }
 
@@ -1389,6 +1390,221 @@ export class ApiClient {
         createdAt: string;
       }>;
     }>("/admin/audit-logs");
+  }
+
+  // --- Project platform features ---
+
+  listProjectEnvVars(projectId: string) {
+    return this.request<{
+      data: Array<{
+        id: string;
+        key: string;
+        value: string;
+        environment: string;
+        isSecret: boolean;
+      }>;
+    }>(`/projects/${projectId}/env-vars`);
+  }
+
+  createProjectEnvVar(
+    projectId: string,
+    input: { key: string; value: string; environment?: string }
+  ) {
+    return this.request<{ data: { id: string; key: string; value: string } }>(
+      `/projects/${projectId}/env-vars`,
+      { method: "POST", body: JSON.stringify(input) }
+    );
+  }
+
+  deleteProjectEnvVar(projectId: string, envVarId: string) {
+    return this.request<void>(`/projects/${projectId}/env-vars/${envVarId}`, {
+      method: "DELETE",
+    });
+  }
+
+  listProjectDomains(projectId: string) {
+    return this.request<{
+      data: Array<{
+        id: string;
+        host: string;
+        status: string;
+        createdAt: string;
+      }>;
+    }>(`/projects/${projectId}/domains`);
+  }
+
+  addProjectDomain(projectId: string, host: string) {
+    return this.request<{ data: { id: string; host: string; status: string } }>(
+      `/projects/${projectId}/domains`,
+      { method: "POST", body: JSON.stringify({ host }) }
+    );
+  }
+
+  removeProjectDomain(projectId: string, domainId: string) {
+    return this.request<void>(`/projects/${projectId}/domains/${domainId}`, {
+      method: "DELETE",
+    });
+  }
+
+  verifyProjectDomain(projectId: string, domainId: string) {
+    return this.request<{ data: { id: string; host: string; status: string } }>(
+      `/projects/${projectId}/domains/${domainId}/verify`,
+      { method: "POST" }
+    );
+  }
+
+  listProjectNotes(projectId: string, opts?: { q?: string; page?: number }) {
+    const q = new URLSearchParams();
+    if (opts?.q) q.set("q", opts.q);
+    if (opts?.page !== undefined) q.set("page", String(opts.page));
+    const suffix = q.toString() ? `?${q}` : "";
+    return this.request<{
+      data: {
+        rows: Array<{
+          id: string;
+          title: string;
+          content: string;
+          tags: string[];
+          createdAt: string;
+          updatedAt: string;
+        }>;
+        count: number;
+        page: number;
+        pageSize: number;
+      };
+    }>(`/projects/${projectId}/notes${suffix}`);
+  }
+
+  saveProjectNote(
+    projectId: string,
+    input: { id?: string; title: string; content: string; tags?: string[] }
+  ) {
+    return this.request<{ data: { id: string } }>(
+      `/projects/${projectId}/notes`,
+      { method: "POST", body: JSON.stringify(input) }
+    );
+  }
+
+  deleteProjectNote(projectId: string, noteId: string) {
+    return this.request<void>(`/projects/${projectId}/notes/${noteId}`, {
+      method: "DELETE",
+    });
+  }
+
+  listProjectRecordings(projectId: string, opts?: { q?: string; page?: number }) {
+    const q = new URLSearchParams();
+    if (opts?.q) q.set("q", opts.q);
+    if (opts?.page !== undefined) q.set("page", String(opts.page));
+    const suffix = q.toString() ? `?${q}` : "";
+    return this.request<{
+      data: {
+        rows: Array<{
+          id: string;
+          title: string;
+          durationSeconds: number;
+          transcript: string;
+          createdAt: string;
+        }>;
+        count: number;
+        page: number;
+        pageSize: number;
+      };
+    }>(`/projects/${projectId}/recordings${suffix}`);
+  }
+
+  saveProjectRecording(
+    projectId: string,
+    input: {
+      id?: string;
+      title: string;
+      durationSeconds?: number;
+      transcript?: string;
+    }
+  ) {
+    return this.request<{ data: { id: string } }>(
+      `/projects/${projectId}/recordings`,
+      { method: "POST", body: JSON.stringify(input) }
+    );
+  }
+
+  deleteProjectRecording(projectId: string, recordingId: string) {
+    return this.request<void>(
+      `/projects/${projectId}/recordings/${recordingId}`,
+      { method: "DELETE" }
+    );
+  }
+
+  listProjectDeployments(projectId: string) {
+    return this.request<{
+      data: Array<{
+        id: string;
+        status: string;
+        target: string;
+        url: string | null;
+        commitMessage: string | null;
+        branch: string;
+        logs: unknown;
+        error: string | null;
+        createdAt: string;
+      }>;
+    }>(`/projects/${projectId}/deployments`);
+  }
+
+  createProjectDeployment(
+    projectId: string,
+    input?: { target?: "vercel" | "netlify" | "mock"; commitMessage?: string }
+  ) {
+    return this.request<{ data: { deploymentId: string } }>(
+      `/projects/${projectId}/deployments`,
+      { method: "POST", body: JSON.stringify(input ?? {}) }
+    );
+  }
+
+  getProjectDeployment(projectId: string, deploymentId: string) {
+    return this.request<{
+      data: {
+        id: string;
+        status: string;
+        target: string;
+        url: string | null;
+        logs: unknown;
+        error: string | null;
+      };
+    }>(`/projects/${projectId}/deployments/${deploymentId}`);
+  }
+
+  listProjectPlatformLogs(projectId: string) {
+    return this.request<{
+      data: Array<{
+        t: string;
+        level: string;
+        msg: string;
+        deployment: string;
+      }>;
+    }>(`/projects/${projectId}/platform-logs`);
+  }
+
+  getProjectTeam(projectId: string) {
+    return this.request<{
+      data: {
+        id?: string;
+        name?: string;
+        slug?: string;
+        role?: string;
+        members?: Array<{
+          id: string;
+          userId: string;
+          name: string;
+          email: string;
+          role: string;
+        }>;
+        invitations?: Array<{
+          id: string;
+          email: string;
+          role: string;
+        }>;
+      } | null;
+    }>(`/projects/${projectId}/team`);
   }
 }
 

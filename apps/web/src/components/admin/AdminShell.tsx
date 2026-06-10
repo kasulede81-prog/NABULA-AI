@@ -1,5 +1,6 @@
 "use client";
 
+import { BRAND_ADMIN } from "@/lib/brand";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -130,7 +131,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-6">
             <Link href="/admin" className="text-sm font-semibold text-white">
-              Nebula Admin
+              {BRAND_ADMIN}
             </Link>
             <nav className="hidden gap-1 md:flex">
               {NAV.map((item) => navLink(item))}

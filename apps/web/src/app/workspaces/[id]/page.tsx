@@ -159,7 +159,7 @@ export default function WorkspaceDetailPage() {
       <div className="mx-auto max-w-lg px-6 py-8">
         <h1 className="text-xl font-semibold text-white">Workspace invitation</h1>
         <p className="mt-2 text-sm text-gray-400">
-          You have been invited to join a workspace on Nebula AI.
+          You have been invited to join a workspace on Ugazon dev.
         </p>
         {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
         <Button className="mt-4" onClick={() => void handleAccept()}>

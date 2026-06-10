@@ -3,6 +3,7 @@
 import { use, useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useSSE } from "@/hooks/useSSE";
+import { useWorkspace } from "@/hooks/useWorkspace";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { FileTree } from "@/components/workspace/FileTree";
 import {
@@ -12,16 +13,16 @@ import {
 import { PreviewPanel } from "@/components/workspace/PreviewPanel";
 import { ProgressFeed } from "@/components/workspace/ProgressFeed";
 import { GitHubExportPanel } from "@/components/workspace/GitHubExportPanel";
+import { DeployModal } from "@/components/workspace/DeployModal";
+import { WorkspaceSidebar } from "@/components/workspace/shell/WorkspaceSidebar";
+import { WorkspaceTopBar } from "@/components/workspace/shell/WorkspaceTopBar";
+import { WorkspaceMainPanel } from "@/components/workspace/shell/WorkspaceMainPanel";
+import { WorkspaceAgentPanel } from "@/components/workspace/shell/WorkspaceAgentPanel";
+import type {
+  ProjectListItem,
+  WorkspaceView,
+} from "@/components/workspace/shell/types";
 import { SseEvents } from "@nebula/shared";
-
-function ProjectHeaderSkeleton() {
-  return (
-    <div className="animate-pulse space-y-2">
-      <div className="h-5 w-48 rounded bg-surface-border" />
-      <div className="h-3 w-24 rounded bg-surface-border" />
-    </div>
-  );
-}
 
 export default function ProjectWorkspacePage({
   params,
@@ -29,11 +30,17 @@ export default function ProjectWorkspacePage({
   params: Promise<{ id: string }>;
 }) {
   const { id: projectId } = use(params);
+  const { activeWorkspaceId } = useWorkspace();
+  const [view, setView] = useState<WorkspaceView>("agent");
+  const [deployOpen, setDeployOpen] = useState(false);
   const [project, setProject] = useState<{
     name: string;
     status: string;
     prompt: string;
+    workspaceId: string | null;
   } | null>(null);
+  const [projects, setProjects] = useState<ProjectListItem[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(true);
   const [projectLoading, setProjectLoading] = useState(true);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [editorTabs, setEditorTabs] = useState<EditorTab[]>([]);
@@ -65,6 +72,19 @@ export default function ProjectWorkspacePage({
   }, [projectId]);
 
   useEffect(() => {
+    setProjectsLoading(true);
+    api
+      .listProjects(
+        activeWorkspaceId
+          ? { workspaceId: activeWorkspaceId }
+          : { scope: "personal" }
+      )
+      .then((res) => setProjects(res.data))
+      .catch(() => setProjects([]))
+      .finally(() => setProjectsLoading(false));
+  }, [activeWorkspaceId]);
+
+  useEffect(() => {
     return () => {
       if (fileRefreshTimer.current) {
         clearTimeout(fileRefreshTimer.current);
@@ -76,7 +96,9 @@ export default function ProjectWorkspacePage({
 
   const handleStatusChange = useCallback((status: string) => {
     setProject((prev) =>
-      prev ? { ...prev, status } : { name: "", status, prompt: "" }
+      prev
+        ? { ...prev, status }
+        : { name: "", status, prompt: "", workspaceId: null }
     );
   }, []);
 
@@ -141,84 +163,106 @@ export default function ProjectWorkspacePage({
     selectedPath,
   ]);
 
+  const projectName = projectLoading && !project ? "Loading…" : (project?.name ?? "Project");
+
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] flex-col">
-      <div className="flex items-center justify-between border-b border-surface-border px-6 py-3">
-        <div>
-          {projectLoading && !project ? (
-            <ProjectHeaderSkeleton />
-          ) : (
-            <>
-              <h1 className="font-semibold text-white">
-                {project?.name ?? "Project"}
-              </h1>
-              <p className="text-xs text-gray-500">
-                Status:{" "}
-                <span
-                  className={
-                    projectStatus === "building"
-                      ? "text-yellow-400 animate-pulse"
-                      : projectStatus === "ready"
-                        ? "text-green-400"
-                        : projectStatus === "failed"
-                          ? "text-red-400"
-                          : "text-nebula-500"
-                  }
-                >
-                  {projectStatus}
-                </span>
-              </p>
-            </>
-          )}
-        </div>
-        <GitHubExportPanel
+    <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
+      <WorkspaceSidebar
+        view={view}
+        onView={setView}
+        projectId={projectId}
+        projects={projects}
+        projectsLoading={projectsLoading}
+      />
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <WorkspaceTopBar
           projectId={projectId}
+          projectName={projectName}
           projectStatus={projectStatus}
-          sseEvents={events}
-        />
-      </div>
-
-      <div className="grid flex-1 grid-cols-[240px_1fr_360px] overflow-hidden">
-        <aside className="border-r border-surface-border overflow-hidden flex flex-col">
-          <FileTree
-            projectId={projectId}
-            selectedPath={selectedPath}
-            onSelect={(path) => void openFile(path)}
-            onRefresh={refreshFiles}
-            refreshKey={fileRefreshKey}
-          />
-          <ProgressFeed events={events} connected={connected} />
-        </aside>
-
-        <section className="overflow-hidden border-r border-surface-border">
-          {selectedPath ? (
-            <MonacoEditorPanel
-              projectId={projectId}
-              tabs={editorTabs}
-              activePath={selectedPath}
-              onTabsChange={setEditorTabs}
-              onActivePathChange={setSelectedPath}
-              onFileSaved={refreshFiles}
-            />
-          ) : (
-            <PreviewPanel
+          onDeploy={() => setDeployOpen(true)}
+          onDomains={() => setView("domains")}
+          actions={
+            <GitHubExportPanel
               projectId={projectId}
               projectStatus={projectStatus}
               sseEvents={events}
-              sseConnected={connected}
             />
-          )}
-        </section>
+          }
+        />
 
-        <aside className="overflow-hidden">
-          <ChatPanel
+        <div className="flex min-h-0 flex-1">
+          {view === "agent" && (
+            <div className="w-[42%] min-w-[380px] max-w-[560px] shrink-0 border-r border-border">
+              <div className="flex h-full flex-col">
+                <ChatPanel
+                  projectId={projectId}
+                  projectStatus={projectStatus}
+                  sseEvents={events}
+                  onStatusChange={handleStatusChange}
+                />
+                <div className="max-h-[180px] shrink-0 border-t border-border">
+                  <ProgressFeed events={events} connected={connected} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          <WorkspaceMainPanel
+            view={view}
             projectId={projectId}
-            projectStatus={projectStatus}
-            sseEvents={events}
-            onStatusChange={handleStatusChange}
+            workspaceId={project?.workspaceId ?? null}
+            agent={
+              <WorkspaceAgentPanel
+                preview={
+                  <PreviewPanel
+                    projectId={projectId}
+                    projectStatus={projectStatus}
+                    sseEvents={events}
+                    sseConnected={connected}
+                  />
+                }
+                code={
+                  <div className="grid h-full grid-cols-[220px_1fr] overflow-hidden">
+                    <aside className="overflow-hidden border-r border-border">
+                      <FileTree
+                        projectId={projectId}
+                        selectedPath={selectedPath}
+                        onSelect={(path) => void openFile(path)}
+                        onRefresh={refreshFiles}
+                        refreshKey={fileRefreshKey}
+                      />
+                    </aside>
+                    <section className="overflow-hidden">
+                      {selectedPath ? (
+                        <MonacoEditorPanel
+                          projectId={projectId}
+                          tabs={editorTabs}
+                          activePath={selectedPath}
+                          onTabsChange={setEditorTabs}
+                          onActivePathChange={setSelectedPath}
+                          onFileSaved={refreshFiles}
+                        />
+                      ) : (
+                        <div className="grid h-full place-items-center text-sm text-muted-foreground">
+                          Select a file from the tree
+                        </div>
+                      )}
+                    </section>
+                  </div>
+                }
+              />
+            }
           />
-        </aside>
+        </div>
       </div>
+
+      <DeployModal
+        open={deployOpen}
+        onClose={() => setDeployOpen(false)}
+        projectId={projectId}
+        projectName={project?.name ?? "Project"}
+      />
     </div>
   );
 }

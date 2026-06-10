@@ -15,6 +15,7 @@ import { supportRoutes } from "./routes/support.routes";
 import { stabilityRoutes } from "./routes/stability.routes";
 import { workspaceRoutes } from "./routes/workspace.routes";
 import { adminRoutes } from "./routes/admin.routes";
+import { platformRoutes } from "./routes/platform.routes";
 import { errorMonitorService } from "./services/stability/error-monitor.service";
 import { registerRequestTiming } from "./middleware/request-timing";
 
@@ -46,6 +47,7 @@ export async function buildApp() {
       await v1.register(supportRoutes);
       await v1.register(stabilityRoutes);
       await v1.register(workspaceRoutes);
+      await v1.register(platformRoutes);
       await v1.register(adminRoutes);
     },
     { prefix: "/v1" }

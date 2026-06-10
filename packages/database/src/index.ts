@@ -21,4 +21,7 @@ export type {
   WorkspaceInvitationStatus,
   ProjectVisibility,
   WorkspaceAuditAction,
+  DeployTarget,
+  DeployStatus,
+  DomainStatus,
 } from "@prisma/client";

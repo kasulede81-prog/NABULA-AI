@@ -43,7 +43,7 @@ export default function FeedbackPage() {
         </Link>
         <h1 className="mt-2 text-xl font-semibold text-white">Send Feedback</h1>
         <p className="text-sm text-gray-500">
-          Help us improve Nebula AI — bugs, ideas, or general comments.
+          Help us improve Ugazon dev — bugs, ideas, or general comments.
         </p>
       </div>
 
