@@ -11,6 +11,7 @@ export const updateProjectSchema = z.object({
   status: z
     .enum(["draft", "clarifying", "building", "ready", "failed"])
     .optional(),
+  agentRules: z.string().max(20000).nullable().optional(),
 });
 
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;

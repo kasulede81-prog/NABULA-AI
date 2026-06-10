@@ -9,6 +9,8 @@ import { eventService } from "./event.service";
 import { SseEvents } from "@nebula/shared";
 import type { CreateMessageInput } from "@nebula/shared";
 import { buildService } from "./build.service";
+import { buildMessageContext } from "./message-context.service";
+import type { PipelineRunOptions } from "../types/pipeline";
 
 type ProjectForScheduling = {
   status: string;
@@ -20,18 +22,18 @@ type BuildScheduler = {
   schedulePipelineWhenIdle(
     projectId: string,
     userId: string,
-    userMessage?: string
+    options?: PipelineRunOptions
   ): void;
   schedulePipeline(
     projectId: string,
     userId: string,
-    userMessage?: string
+    options?: PipelineRunOptions
   ): void;
   isBuilderActive(projectId: string): boolean;
   scheduleBuilder(
     projectId: string,
     userId: string,
-    userMessage?: string
+    options?: PipelineRunOptions
   ): void;
 };
 
@@ -40,28 +42,28 @@ export function applyMessagePipelineScheduling(
   project: ProjectForScheduling,
   projectId: string,
   userId: string,
-  content: string,
+  options: PipelineRunOptions = {},
   build: BuildScheduler = buildService
 ) {
   if (project.status === "clarifying") {
     if (build.isPipelineActive(projectId)) {
-      build.schedulePipelineWhenIdle(projectId, userId, content);
+      build.schedulePipelineWhenIdle(projectId, userId, options);
     } else {
-      build.schedulePipeline(projectId, userId, content);
+      build.schedulePipeline(projectId, userId, options);
     }
   } else if (project.status === "draft" && !project.specJson) {
     if (build.isPipelineActive(projectId)) {
-      build.schedulePipelineWhenIdle(projectId, userId, content);
+      build.schedulePipelineWhenIdle(projectId, userId, options);
     } else {
-      build.schedulePipeline(projectId, userId, content);
+      build.schedulePipeline(projectId, userId, options);
     }
   } else if (project.status === "ready" && project.specJson) {
     if (!build.isBuilderActive(projectId)) {
-      build.scheduleBuilder(projectId, userId, content);
+      build.scheduleBuilder(projectId, userId, options);
     }
   } else if (project.status === "failed" && project.specJson) {
     if (!build.isBuilderActive(projectId)) {
-      build.scheduleBuilder(projectId, userId, content);
+      build.scheduleBuilder(projectId, userId, options);
     }
   }
 }
@@ -97,11 +99,18 @@ export class MessageService {
   async create(projectId: string, userId: string, input: CreateMessageInput) {
     const project = await projectService.get(projectId, userId);
 
+    const { displayContent, agentContent } = await buildMessageContext(
+      projectId,
+      userId,
+      input.content,
+      input.attachedFiles
+    );
+
     const message = await prisma.message.create({
       data: {
         projectId,
         role: "user",
-        content: input.content,
+        content: displayContent,
       },
       select: {
         id: true,
@@ -113,7 +122,10 @@ export class MessageService {
 
     eventService.publish(projectId, SseEvents.MESSAGE_CREATED, message);
 
-    applyMessagePipelineScheduling(project, projectId, userId, input.content);
+    applyMessagePipelineScheduling(project, projectId, userId, {
+      userMessage: agentContent,
+      llmProvider: input.llmProvider,
+    });
 
     return message;
   }

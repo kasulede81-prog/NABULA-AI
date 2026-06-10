@@ -74,7 +74,7 @@ check(
 );
 check(
   "create() delegates to applyMessagePipelineScheduling",
-  source.includes("applyMessagePipelineScheduling(project, projectId, userId, input.content)")
+  source.includes("applyMessagePipelineScheduling(project, projectId, userId,")
 );
 
 const projectId = "proj-1";
@@ -88,7 +88,7 @@ const content = "Please try again";
     { status: "draft", specJson: null },
     projectId,
     userId,
-    content,
+    { userMessage: content },
     mockScheduler(mock)
   );
   check(
@@ -104,7 +104,7 @@ const content = "Please try again";
     { status: "draft", specJson: null },
     projectId,
     userId,
-    content,
+    { userMessage: content },
     mockScheduler(mock)
   );
   check(
@@ -120,7 +120,7 @@ const content = "Please try again";
     { status: "clarifying", specJson: null },
     projectId,
     userId,
-    content,
+    { userMessage: content },
     mockScheduler(mock)
   );
   check(
@@ -135,7 +135,7 @@ const content = "Please try again";
     { status: "clarifying", specJson: null },
     projectId,
     userId,
-    content,
+    { userMessage: content },
     mockScheduler(mock)
   );
   check(
@@ -151,7 +151,7 @@ const content = "Please try again";
     { status: "ready", specJson: { appType: "crm" } },
     projectId,
     userId,
-    content,
+    { userMessage: content },
     mockScheduler(mock)
   );
   check(
@@ -166,7 +166,7 @@ const content = "Please try again";
     { status: "ready", specJson: { appType: "crm" } },
     projectId,
     userId,
-    content,
+    { userMessage: content },
     mockScheduler(mock)
   );
   check(
@@ -182,7 +182,7 @@ const content = "Please try again";
     { status: "failed", specJson: { appType: "crm" } },
     projectId,
     userId,
-    content,
+    { userMessage: content },
     mockScheduler(mock)
   );
   check(
@@ -197,7 +197,7 @@ const content = "Please try again";
     { status: "failed", specJson: { appType: "crm" } },
     projectId,
     userId,
-    content,
+    { userMessage: content },
     mockScheduler(mock)
   );
   check(
@@ -213,7 +213,7 @@ const content = "Please try again";
     { status: "failed", specJson: null },
     projectId,
     userId,
-    content,
+    { userMessage: content },
     mockScheduler(mock)
   );
   check(

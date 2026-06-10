@@ -589,6 +589,7 @@ model Project {
   githubRepoFullName   String?   @map("github_repo_full_name")
   githubExportedAt     DateTime? @map("github_exported_at")
   buildCount           Int       @default(0) @map("build_count")
+  agentRules           String?   @map("agent_rules")
   createdAt            DateTime  @default(now()) @map("created_at")
   updatedAt            DateTime  @updatedAt @map("updated_at")
   user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)

@@ -5,7 +5,9 @@ export type WorkspaceView =
   | "domains"
   | "env"
   | "logs"
-  | "team";
+  | "team"
+  | "rules"
+  | "agents";
 
 export interface ProjectListItem {
   id: string;

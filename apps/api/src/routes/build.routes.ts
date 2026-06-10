@@ -41,13 +41,16 @@ export async function buildRoutes(app: FastifyInstance) {
     async (request, reply) => {
     const { userId } = request as AuthenticatedRequest;
     const { projectId } = request.params as { projectId: string };
-    const body = (request.body as { message?: string }) ?? {};
+    const body = (request.body as { message?: string; llmProvider?: string }) ?? {};
 
     try {
       const result = await buildService.runBuilder(
         projectId,
         userId,
-        body.message
+        {
+          userMessage: body.message,
+          llmProvider: body.llmProvider as "anthropic" | "deepseek" | undefined,
+        }
       );
       return reply.send(result);
     } catch (err) {
@@ -72,9 +75,15 @@ export async function buildRoutes(app: FastifyInstance) {
     async (request, reply) => {
     const { userId } = request as AuthenticatedRequest;
     const { projectId } = request.params as { projectId: string };
-    const body = (request.body as { message?: string }) ?? {};
+    const body = (request.body as {
+      message?: string;
+      llmProvider?: string;
+    }) ?? {};
 
-    buildService.schedulePipeline(projectId, userId, body.message);
+    buildService.schedulePipeline(projectId, userId, {
+      userMessage: body.message,
+      llmProvider: body.llmProvider as "anthropic" | "deepseek" | undefined,
+    });
 
     return reply.status(202).send({
       status: "accepted",

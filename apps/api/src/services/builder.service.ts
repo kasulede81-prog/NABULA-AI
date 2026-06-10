@@ -20,12 +20,15 @@ import {
 } from "@nebula/shared";
 import { prisma } from "../lib/prisma";
 import { getActiveLLMProviderId } from "../config/llm-provider";
-import { getLLMProvider } from "../providers/llm";
+import { resolveLLMProvider } from "../providers/llm";
 import type { LLMMessage, LLMToolDefinition } from "@nebula/shared";
 import { agentRunService } from "./agent-run.service";
 import { eventService } from "./event.service";
 import { vfsService } from "./vfs.service";
 import { projectService } from "./project.service";
+import { getProjectRulesBlock } from "./message-context.service";
+import { assertBuildNotCancelled } from "../lib/build-cancel";
+import type { LLMProviderId } from "@nebula/shared";
 
 const MAX_TOOL_CALLS = 20;
 const BUILD_TIMEOUT_MS = 8 * 60 * 1000;
@@ -120,7 +123,12 @@ export class BuilderService {
   async run(
     projectId: string,
     userId: string,
-    options: { userMessage?: string; errorContext?: string; attempt?: number } = {}
+    options: {
+      userMessage?: string;
+      errorContext?: string;
+      attempt?: number;
+      llmProvider?: LLMProviderId;
+    } = {}
   ) {
     const project = await projectService.get(projectId, userId);
 
@@ -136,12 +144,14 @@ export class BuilderService {
     const spec = project.specJson as AppSpec;
     const attempt = options.attempt ?? 1;
 
+    const providerId = options.llmProvider ?? getActiveLLMProviderId();
+
     const run = await agentRunService.start(
       projectId,
       userId,
       "builder",
       options.userMessage ?? JSON.stringify(spec),
-      getActiveLLMProviderId()
+      providerId
     );
 
     const buildStartedAt = Date.now();
@@ -184,9 +194,12 @@ export class BuilderService {
     let currentPhase: string | null = null;
 
     try {
-      const llm = getLLMProvider();
+      const llm = resolveLLMProvider(options.llmProvider);
+      const rulesBlock = await getProjectRulesBlock(projectId);
+      const builderSystem = BUILDER_SYSTEM + rulesBlock;
 
       while (toolCallCount < MAX_TOOL_CALLS && Date.now() < deadline) {
+        assertBuildNotCancelled(projectId);
         const currentFiles = await vfsService.listTree(projectId, userId);
         const existingPaths = currentFiles.map((f) => f.path);
 
@@ -218,7 +231,7 @@ export class BuilderService {
         for (let phaseAttempt = 0; phaseAttempt <= MAX_PHASE_RETRIES; phaseAttempt++) {
           const messages: LLMMessage[] = [{ role: "user", content: phasePrompt }];
           const result = await llm.generate({
-            system: BUILDER_SYSTEM,
+            system: builderSystem,
             messages,
             tools: BUILDER_TOOLS,
             maxTokens: 16384,

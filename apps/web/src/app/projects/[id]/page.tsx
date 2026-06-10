@@ -23,6 +23,7 @@ import type {
   WorkspaceView,
 } from "@/components/workspace/shell/types";
 import { SseEvents } from "@nebula/shared";
+import { FileSearchPalette } from "@/components/workspace/FileSearchPalette";
 import { setLastProjectId } from "@/lib/workspace-entry";
 
 export default function ProjectWorkspacePage({
@@ -46,6 +47,7 @@ export default function ProjectWorkspacePage({
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [editorTabs, setEditorTabs] = useState<EditorTab[]>([]);
   const [fileRefreshKey, setFileRefreshKey] = useState(0);
+  const [searchOpen, setSearchOpen] = useState(false);
   const { events, connected } = useSSE(projectId);
   const fileRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -66,6 +68,17 @@ export default function ProjectWorkspacePage({
   useEffect(() => {
     setLastProjectId(projectId);
   }, [projectId]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => {
     setProjectLoading(true);
@@ -271,6 +284,16 @@ export default function ProjectWorkspacePage({
           projectName={project?.name ?? "Project"}
         />
       ) : null}
+
+      <FileSearchPalette
+        projectId={projectId}
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        onOpenFile={(path) => {
+          setView("agent");
+          void openFile(path);
+        }}
+      />
     </div>
   );
 }

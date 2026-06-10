@@ -501,7 +501,18 @@ export class ApiClient {
       previewUrl: string | null;
       buildCount: number;
       workspaceId: string | null;
+      agentRules: string | null;
     }>(`/projects/${id}`);
+  }
+
+  updateProject(
+    id: string,
+    data: { name?: string; agentRules?: string | null }
+  ) {
+    return this.request<{ id: string; agentRules: string | null }>(
+      `/projects/${id}`,
+      { method: "PATCH", body: JSON.stringify(data) }
+    );
   }
 
   deleteProject(id: string) {
@@ -543,7 +554,14 @@ export class ApiClient {
     return { data };
   }
 
-  sendMessage(projectId: string, content: string) {
+  sendMessage(
+    projectId: string,
+    content: string,
+    opts?: {
+      llmProvider?: "anthropic" | "deepseek";
+      attachedFiles?: string[];
+    }
+  ) {
     return this.request<{
       id: string;
       role: string;
@@ -551,7 +569,74 @@ export class ApiClient {
       createdAt: string;
     }>(`/projects/${projectId}/messages`, {
       method: "POST",
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({
+        content,
+        llmProvider: opts?.llmProvider,
+        attachedFiles: opts?.attachedFiles,
+      }),
+    });
+  }
+
+  listLlmProviders() {
+    return this.request<{
+      data: Array<{ id: "anthropic" | "deepseek"; label: string; default?: boolean }>;
+      defaultProvider: string;
+    }>("/llm/providers");
+  }
+
+  listDeployTargets() {
+    return this.request<{
+      data: Array<{
+        id: "vercel" | "netlify" | "mock";
+        label: string;
+        configured: boolean;
+        default?: boolean;
+      }>;
+      defaultTarget: string;
+    }>("/platform/deploy-targets");
+  }
+
+  searchProjectFiles(projectId: string, q: string) {
+    const params = new URLSearchParams({ q });
+    return this.request<{
+      data: Array<{ path: string; snippet: string }>;
+    }>(`/projects/${projectId}/files/search?${params}`);
+  }
+
+  listAgentRuns(projectId: string) {
+    return this.request<{
+      data: Array<{
+        id: string;
+        agentType: string;
+        status: string;
+        inputPrompt: string;
+        outputSummary: string | null;
+        errorMessage: string | null;
+        errorCode: string | null;
+        llmProvider: string | null;
+        tokensInput: number;
+        tokensOutput: number;
+        toolCalls: number | null;
+        filesGenerated: number | null;
+        buildDurationMs: number | null;
+        startedAt: string;
+        completedAt: string | null;
+        createdAt: string;
+      }>;
+      active: boolean;
+    }>(`/projects/${projectId}/agent-runs`);
+  }
+
+  cancelAgentRun(projectId: string, runId: string) {
+    return this.request<{
+      data: {
+        id: string;
+        status: string;
+        errorCode: string | null;
+        errorMessage: string | null;
+      };
+    }>(`/projects/${projectId}/agent-runs/${runId}/cancel`, {
+      method: "POST",
     });
   }
 

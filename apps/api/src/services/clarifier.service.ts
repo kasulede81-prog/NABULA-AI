@@ -5,10 +5,14 @@ import {
   type ClarifierOutput,
 } from "@nebula/shared";
 import { prisma } from "../lib/prisma";
-import { getLLMProvider } from "../providers/llm";
+import { getActiveLLMProviderId } from "../config/llm-provider";
+import { resolveLLMProvider } from "../providers/llm";
 import { agentRunService } from "./agent-run.service";
 import { eventService } from "./event.service";
 import { projectService } from "./project.service";
+import { getProjectRulesBlock } from "./message-context.service";
+import { assertBuildNotCancelled } from "../lib/build-cancel";
+import type { PipelineRunOptions } from "../types/pipeline";
 
 const CLARIFIER_SYSTEM = `You are the Clarifier agent for Nebula AI, an app builder platform.
 Your job is to analyze a user's app request and either ask clarifying questions OR produce a complete specification.
@@ -51,7 +55,12 @@ function formatSpecReadyMessage(spec: NonNullable<ClarifierOutput["spec"]>): str
 }
 
 export class ClarifierService {
-  async run(projectId: string, userId: string, forceReady = false) {
+  async run(
+    projectId: string,
+    userId: string,
+    forceReady = false,
+    options: PipelineRunOptions = {}
+  ) {
     const project = await projectService.get(projectId, userId);
 
     const messages = await prisma.message.findMany({
@@ -71,11 +80,14 @@ export class ClarifierService {
 
     const forceSpec = forceReady || hasAskedQuestions;
 
+    const providerId = options.llmProvider ?? getActiveLLMProviderId();
+
     const run = await agentRunService.start(
       projectId,
       userId,
       "clarifier",
-      project.prompt
+      project.prompt,
+      providerId
     );
 
     eventService.publish(projectId, SseEvents.AGENT_STARTED, {
@@ -92,13 +104,15 @@ export class ClarifierService {
     let outputTokens = 0;
 
     try {
-      const llm = getLLMProvider();
+      assertBuildNotCancelled(projectId);
+      const llm = resolveLLMProvider(options.llmProvider);
+      const rulesBlock = await getProjectRulesBlock(projectId);
       const userPrompt = forceSpec
         ? `${conversation}\n\nThe user has answered your questions. Produce the final spec now with ready=true. Make reasonable assumptions for anything unclear.`
         : `Original request: ${project.prompt}\n\nConversation:\n${conversation}`;
 
       const result = await llm.generate({
-        system: CLARIFIER_SYSTEM,
+        system: CLARIFIER_SYSTEM + rulesBlock,
         messages: [{ role: "user", content: userPrompt }],
         maxTokens: 4096,
       });

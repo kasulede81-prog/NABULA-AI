@@ -34,6 +34,14 @@ const TeamTab = dynamic(
   () => import("../tabs/TeamTab").then((m) => m.TeamTab),
   { ssr: false, loading: () => tabLoading }
 );
+const RulesTab = dynamic(
+  () => import("../tabs/RulesTab").then((m) => m.RulesTab),
+  { ssr: false, loading: () => tabLoading }
+);
+const AgentRunsTab = dynamic(
+  () => import("../tabs/AgentRunsTab").then((m) => m.AgentRunsTab),
+  { ssr: false, loading: () => tabLoading }
+);
 
 interface WorkspaceMainPanelProps {
   view: WorkspaceView;
@@ -88,6 +96,22 @@ export function WorkspaceMainPanel({
     return (
       <div className="h-full min-w-0 flex-1 overflow-hidden">
         <LogsTab projectId={projectId} />
+      </div>
+    );
+  }
+
+  if (view === "rules") {
+    return (
+      <div className="h-full min-w-0 flex-1 overflow-hidden">
+        <RulesTab projectId={projectId} />
+      </div>
+    );
+  }
+
+  if (view === "agents") {
+    return (
+      <div className="h-full min-w-0 flex-1 overflow-hidden">
+        <AgentRunsTab projectId={projectId} />
       </div>
     );
   }

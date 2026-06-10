@@ -16,6 +16,13 @@ import {
   PlatformMetricEvents,
 } from "./analytics.service";
 import { ProjectLock } from "../lib/project-lock";
+import {
+  assertBuildNotCancelled,
+  clearBuildCancel,
+  isBuildCancelRequested,
+  requestBuildCancel,
+} from "../lib/build-cancel";
+import type { PipelineRunOptions } from "../types/pipeline";
 
 const MAX_BUILD_RETRIES = 2;
 
@@ -23,32 +30,55 @@ const clarifierLock = new ProjectLock("clarifier");
 const builderLock = new ProjectLock("builder");
 
 export class BuildService {
+  requestCancel(projectId: string) {
+    requestBuildCancel(projectId);
+  }
+
+  clearCancel(projectId: string) {
+    clearBuildCancel(projectId);
+  }
+
+  isCancelRequested(projectId: string) {
+    return isBuildCancelRequested(projectId);
+  }
+
+  assertNotCancelled(projectId: string) {
+    assertBuildNotCancelled(projectId);
+  }
+
   /** Run clarifier then builder (full pipeline). */
-  async runPipeline(projectId: string, userId: string, userMessage?: string) {
+  async runPipeline(
+    projectId: string,
+    userId: string,
+    options: PipelineRunOptions = {}
+  ) {
+    this.clearCancel(projectId);
     const project = await projectService.get(projectId, userId);
 
     if (project.specJson && project.status !== "clarifying") {
-      return this.runBuilder(projectId, userId, userMessage);
+      return this.runBuilder(projectId, userId, options);
     }
 
     const clarifierResult = await this.runClarifier(
       projectId,
       userId,
-      project.status === "clarifying"
+      project.status === "clarifying",
+      options
     );
 
     if (!clarifierResult.ready) {
       return { phase: "clarifying" as const, ...clarifierResult };
     }
 
-    return this.runBuilder(projectId, userId, userMessage);
+    return this.runBuilder(projectId, userId, options);
   }
 
   /** Run clarifier only. One active run per project. */
   async runClarifier(
     projectId: string,
     userId: string,
-    forceReady?: boolean
+    forceReady?: boolean,
+    options: PipelineRunOptions = {}
   ) {
     const project = await projectService.get(projectId, userId);
     const shouldForce = forceReady ?? project.status === "clarifying";
@@ -65,14 +95,16 @@ export class BuildService {
 
     clarifierLock.tryAcquire(projectId);
     try {
-      return await clarifierService.run(projectId, userId, shouldForce);
+      this.assertNotCancelled(projectId);
+      return await clarifierService.run(projectId, userId, shouldForce, options);
     } finally {
       clarifierLock.release(projectId);
+      this.clearCancel(projectId);
     }
   }
 
   /** Run builder with retry loop (max 2 retries). */
-  async runBuilder(projectId: string, userId: string, userMessage?: string) {
+  async runBuilder(projectId: string, userId: string, options: PipelineRunOptions = {}) {
     try {
       await subscriptionService.consumeBuildSlot(userId, projectId);
     } catch (err) {
@@ -90,10 +122,12 @@ export class BuildService {
 
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
+          this.assertNotCancelled(projectId);
           const result = await builderService.run(projectId, userId, {
-            userMessage,
+            userMessage: options.userMessage,
             errorContext: attempt > 1 ? lastError : undefined,
             attempt,
+            llmProvider: options.llmProvider,
           });
           return { phase: "ready" as const, ...result };
         } catch (err) {
@@ -115,6 +149,7 @@ export class BuildService {
       throw new BuildServiceError("BUILD_FAILED", lastError, 500);
     } finally {
       builderLock.release(projectId);
+      this.clearCancel(projectId);
     }
   }
 
@@ -219,12 +254,16 @@ export class BuildService {
   }
 
   /** Fire-and-forget async pipeline (used from message/create hooks). */
-  schedulePipeline(projectId: string, userId: string, userMessage?: string) {
+  schedulePipeline(
+    projectId: string,
+    userId: string,
+    options: PipelineRunOptions = {}
+  ) {
     if (this.isPipelineActive(projectId)) {
       return;
     }
     setImmediate(() => {
-      this.runPipeline(projectId, userId, userMessage).catch((err) => {
+      this.runPipeline(projectId, userId, options).catch((err) => {
         console.error(`[build] Pipeline failed for ${projectId}:`, err);
       });
     });
@@ -234,13 +273,13 @@ export class BuildService {
   schedulePipelineWhenIdle(
     projectId: string,
     userId: string,
-    userMessage?: string,
+    options: PipelineRunOptions = {},
     maxWaitMs = 120_000
   ) {
     const startedAt = Date.now();
     const poll = () => {
       if (!this.isPipelineActive(projectId)) {
-        this.schedulePipeline(projectId, userId, userMessage);
+        this.schedulePipeline(projectId, userId, options);
         return;
       }
       if (Date.now() - startedAt >= maxWaitMs) {
@@ -262,12 +301,16 @@ export class BuildService {
     });
   }
 
-  scheduleBuilder(projectId: string, userId: string, userMessage?: string) {
+  scheduleBuilder(
+    projectId: string,
+    userId: string,
+    options: PipelineRunOptions = {}
+  ) {
     if (this.isBuilderActive(projectId)) {
       return;
     }
     setImmediate(() => {
-      this.runBuilder(projectId, userId, userMessage).catch((err) => {
+      this.runBuilder(projectId, userId, options).catch((err) => {
         console.error(`[build] Builder failed for ${projectId}:`, err);
       });
     });

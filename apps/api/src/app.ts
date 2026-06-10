@@ -16,6 +16,8 @@ import { stabilityRoutes } from "./routes/stability.routes";
 import { workspaceRoutes } from "./routes/workspace.routes";
 import { adminRoutes } from "./routes/admin.routes";
 import { platformRoutes } from "./routes/platform.routes";
+import { llmRoutes } from "./routes/llm.routes";
+import { agentRunRoutes } from "./routes/agent-runs.routes";
 import { errorMonitorService } from "./services/stability/error-monitor.service";
 import { registerRequestTiming } from "./middleware/request-timing";
 
@@ -49,6 +51,8 @@ export async function buildApp() {
       await v1.register(workspaceRoutes);
       await v1.register(platformRoutes);
       await v1.register(adminRoutes);
+      await v1.register(llmRoutes);
+      await v1.register(agentRunRoutes);
     },
     { prefix: "/v1" }
   );

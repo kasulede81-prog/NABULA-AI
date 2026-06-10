@@ -22,12 +22,20 @@ export function createLLMProviderForId(id: LLMProviderId): LLMProvider {
 
 /** Returns the configured LLM provider (Anthropic or DeepSeek). */
 export function getLLMProvider(): LLMProvider {
-  const activeId = getActiveLLMProviderId();
-  if (!provider || providerId !== activeId) {
-    provider = createLLMProviderForId(activeId);
-    providerId = activeId;
+  return resolveLLMProvider();
+}
+
+/** Resolve provider for a request, with optional per-message override. */
+export function resolveLLMProvider(override?: LLMProviderId): LLMProvider {
+  const activeId = override ?? getActiveLLMProviderId();
+  if (!override) {
+    if (!provider || providerId !== activeId) {
+      provider = createLLMProviderForId(activeId);
+      providerId = activeId;
+    }
+    return provider;
   }
-  return provider;
+  return createLLMProviderForId(activeId);
 }
 
 /** For testing or runtime override. */

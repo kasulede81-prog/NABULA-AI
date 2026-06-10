@@ -46,6 +46,11 @@ export function DeployModal({
       setDeployment(null);
       setCommit("");
       setLastError(null);
+      void api.listDeployTargets().then((res) => {
+        setTarget(
+          (res.defaultTarget as "vercel" | "netlify" | "mock") ?? "vercel"
+        );
+      });
     }
   }, [open]);
 

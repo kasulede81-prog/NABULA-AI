@@ -325,7 +325,9 @@ export class AdminPhase2Service {
       throw new AdminDashboardError("NO_SPEC", "Project has no spec to rebuild", 422);
     }
 
-    buildService.scheduleBuilder(projectId, project.userId, "Admin force rebuild");
+    buildService.scheduleBuilder(projectId, project.userId, {
+      userMessage: "Admin force rebuild",
+    });
     return { ok: true };
   }
 

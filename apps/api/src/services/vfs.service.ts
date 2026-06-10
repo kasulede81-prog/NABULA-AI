@@ -66,6 +66,40 @@ export class VfsService {
     return buildPathCursorPage(rows, limit);
   }
 
+  async searchFiles(
+    projectId: string,
+    userId: string,
+    query: string,
+    limit = 40
+  ) {
+    await projectService.get(projectId, userId);
+    const q = query.trim();
+    if (!q) return [];
+
+    const rows = await prisma.file.findMany({
+      where: {
+        projectId,
+        OR: [
+          { path: { contains: q, mode: "insensitive" } },
+          { content: { contains: q, mode: "insensitive" } },
+        ],
+      },
+      orderBy: { path: "asc" },
+      take: limit,
+      select: { path: true, content: true },
+    });
+
+    return rows.map((row) => {
+      const idx = row.content.toLowerCase().indexOf(q.toLowerCase());
+      const start = idx >= 0 ? Math.max(0, idx - 40) : 0;
+      const snippet =
+        idx >= 0
+          ? row.content.slice(start, start + 120).replace(/\s+/g, " ")
+          : row.path;
+      return { path: row.path, snippet };
+    });
+  }
+
   async readFile(projectId: string, userId: string, path: string) {
     await projectService.get(projectId, userId);
 

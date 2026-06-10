@@ -1,6 +1,7 @@
 import { vfsPathSchema } from "@nebula/shared";
 import { z } from "zod";
-import { getLLMProvider } from "../providers/llm";
+import { resolveLLMProvider } from "../providers/llm";
+import { getProjectRulesBlock } from "./message-context.service";
 import { projectService } from "./project.service";
 import { vfsService } from "./vfs.service";
 import {
@@ -50,13 +51,14 @@ export class AiEditService {
       { path }
     );
 
-    const llm = getLLMProvider();
+    const rulesBlock = await getProjectRulesBlock(projectId);
+    const llm = resolveLLMProvider();
     const result = await llm.generate({
       system: `You are a precise code editor. Apply the user's instruction to the file.
 Return ONLY the complete updated file content.
 Do not wrap output in markdown fences.
 Do not add explanations or commentary.
-Preserve formatting and style unless the instruction requires changes.`,
+Preserve formatting and style unless the instruction requires changes.${rulesBlock}`,
       messages: [
         {
           role: "user",

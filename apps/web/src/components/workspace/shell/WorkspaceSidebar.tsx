@@ -22,6 +22,8 @@ import {
   Settings,
   MessageSquare,
   User,
+  Bot,
+  ScrollText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/brand/BrandMark";
@@ -35,6 +37,8 @@ const nav: {
   view: WorkspaceView;
 }[] = [
   { icon: Sparkles, label: "Agent", view: "agent" },
+  { icon: Bot, label: "Agent runs", view: "agents" },
+  { icon: ScrollText, label: "Rules", view: "rules" },
   { icon: Database, label: "Database", view: "database" },
   { icon: Cloud, label: "Deployments", view: "deployments" },
   { icon: Globe, label: "Domains", view: "domains" },

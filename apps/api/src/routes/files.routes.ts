@@ -13,6 +13,24 @@ import { authenticate, type AuthenticatedRequest } from "../middleware/auth";
 export async function fileRoutes(app: FastifyInstance) {
   app.addHook("preHandler", authenticate);
 
+  app.get("/projects/:projectId/files/search", async (request, reply) => {
+    const { userId } = request as AuthenticatedRequest;
+    const { projectId } = request.params as { projectId: string };
+    const { q = "" } = request.query as { q?: string };
+
+    try {
+      const data = await vfsService.searchFiles(projectId, userId, q);
+      return reply.send({ data });
+    } catch (err) {
+      if (err instanceof ProjectError) {
+        return reply.status(err.status).send({
+          error: { code: err.code, message: err.message },
+        });
+      }
+      throw err;
+    }
+  });
+
   app.get("/projects/:projectId/files", async (request, reply) => {
     const { userId } = request as AuthenticatedRequest;
     const { projectId } = request.params as { projectId: string };

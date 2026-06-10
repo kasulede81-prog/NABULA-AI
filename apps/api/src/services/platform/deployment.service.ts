@@ -11,6 +11,12 @@ type DeployStatus =
   | "canceled";
 type DeployTarget = "vercel" | "netlify" | "mock";
 
+function defaultDeployTarget(): DeployTarget {
+  if (env.VERCEL_TOKEN) return "vercel";
+  if (env.NETLIFY_TOKEN) return "netlify";
+  return "mock";
+}
+
 export type DeployLogEntry = {
   t: string;
   level: "info" | "ok" | "warn" | "error";
@@ -45,7 +51,7 @@ export class DeploymentService {
     userId: string,
     input: { target?: DeployTarget; commitMessage?: string }
   ) {
-    const target = input.target ?? "mock";
+    const target = input.target ?? defaultDeployTarget();
     const envRows = await prisma.projectEnvVar.findMany({
       where: { projectId, environment: "production" },
     });

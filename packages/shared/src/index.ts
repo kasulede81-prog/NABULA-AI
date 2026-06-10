@@ -1,6 +1,7 @@
 export * from "./schemas/auth";
 export * from "./schemas/project";
 export * from "./schemas/message";
+export * from "./schemas/llm";
 export * from "./schemas/file";
 export * from "./schemas/spec";
 export * from "./validation/build-validation";
