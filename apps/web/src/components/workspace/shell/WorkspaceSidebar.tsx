@@ -4,21 +4,23 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  Sparkles,
-  Plus,
+  Building2,
+  ChevronDown,
+  Check,
   Cloud,
   Database,
+  Globe,
   KeyRound,
   Activity,
   Users,
-  Globe,
   ChevronsLeft,
   ChevronsRight,
   Search,
   LogOut,
-  ChevronDown,
-  Check,
-  Building2,
+  Plus,
+  Sparkles,
+  Settings,
+  MessageSquare,
   User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -254,6 +256,31 @@ export function WorkspaceSidebar({
       )}
 
       <div className="space-y-1 border-t border-border p-3">
+        {!collapsed && (
+          <div className="mb-1 space-y-0.5">
+            <Link
+              href="/workspaces"
+              className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-xs text-sidebar-foreground transition-smooth hover:bg-sidebar-accent/60"
+            >
+              <Users className="h-3.5 w-3.5" />
+              Workspaces
+            </Link>
+            <Link
+              href="/settings/billing"
+              className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-xs text-sidebar-foreground transition-smooth hover:bg-sidebar-accent/60"
+            >
+              <Settings className="h-3.5 w-3.5" />
+              Billing
+            </Link>
+            <Link
+              href="/settings/feedback"
+              className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-xs text-sidebar-foreground transition-smooth hover:bg-sidebar-accent/60"
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+              Feedback
+            </Link>
+          </div>
+        )}
         {!collapsed && user && (
           <div className="mb-1 flex items-center gap-2 px-1.5 py-1">
             <div className="grid h-6 w-6 place-items-center rounded-full bg-gradient-accent text-[10px] font-semibold text-accent-foreground">

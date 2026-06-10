@@ -1,20 +1,20 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
+import { useEnterWorkspace } from "@/hooks/useEnterWorkspace";
 import { Button } from "@/components/ui/Button";
 import { BrandHero } from "@/components/brand/BrandMark";
 import { BRAND_TAGLINE } from "@/lib/brand";
 
 export default function HomePage() {
   const { user, loading } = useAuth();
-  const router = useRouter();
+  const { enterWorkspace } = useEnterWorkspace();
 
   useEffect(() => {
-    if (!loading && user) router.replace("/projects");
-  }, [user, loading, router]);
+    if (!loading && user) void enterWorkspace();
+  }, [user, loading, enterWorkspace]);
 
   if (loading) {
     return null;

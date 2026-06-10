@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
+import { setLastProjectId } from "@/lib/workspace-entry";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useWorkspace } from "@/hooks/useWorkspace";
@@ -29,6 +30,7 @@ export default function NewProjectPage() {
         prompt,
         workspaceId
       );
+      setLastProjectId(project.id);
       router.push(`/projects/${project.id}`);
     } catch (err) {
       setError(

@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
+import { useEnterWorkspace } from "@/hooks/useEnterWorkspace";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { BrandMark } from "@/components/brand/BrandMark";
@@ -11,7 +11,7 @@ import { BRAND_TAGLINE } from "@/lib/brand";
 
 export default function RegisterPage() {
   const { register, error } = useAuth();
-  const router = useRouter();
+  const { enterWorkspace } = useEnterWorkspace();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,7 +22,7 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       await register(email, password, name);
-      router.push("/projects");
+      await enterWorkspace();
     } catch {
       // error set in hook
     } finally {

@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
+import { useEnterWorkspace } from "@/hooks/useEnterWorkspace";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { BrandMark } from "@/components/brand/BrandMark";
@@ -11,7 +11,7 @@ import { BRAND_TAGLINE } from "@/lib/brand";
 
 export default function LoginPage() {
   const { login, error } = useAuth();
-  const router = useRouter();
+  const { enterWorkspace } = useEnterWorkspace();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -21,7 +21,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(email, password);
-      router.push("/projects");
+      await enterWorkspace();
     } catch {
       // error set in hook
     } finally {

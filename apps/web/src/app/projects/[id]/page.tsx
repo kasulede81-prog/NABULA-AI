@@ -23,6 +23,7 @@ import type {
   WorkspaceView,
 } from "@/components/workspace/shell/types";
 import { SseEvents } from "@nebula/shared";
+import { setLastProjectId } from "@/lib/workspace-entry";
 
 export default function ProjectWorkspacePage({
   params,
@@ -61,6 +62,10 @@ export default function ProjectWorkspacePage({
       fileRefreshTimer.current = null;
     }, 500);
   }, [refreshFiles]);
+
+  useEffect(() => {
+    setLastProjectId(projectId);
+  }, [projectId]);
 
   useEffect(() => {
     setProjectLoading(true);
