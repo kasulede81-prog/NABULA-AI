@@ -323,29 +323,51 @@ export class ApiClient {
     );
   }
 
-  async listProjects(opts?: { workspaceId?: string; scope?: "personal" | "all" }) {
+  async listProjects(
+    opts?: { workspaceId?: string; scope?: "personal" | "all"; fetchAll?: boolean }
+  ) {
     const base = new URLSearchParams();
     if (opts?.workspaceId) base.set("workspaceId", opts.workspaceId);
     if (opts?.scope) base.set("scope", opts.scope);
+    base.set("limit", "100");
     const prefix = base.toString();
-    const data = await this.fetchAllCursorPages<{
-      id: string;
-      name: string;
-      slug: string;
-      prompt: string;
-      status: string;
-      previewUrl: string | null;
-      buildCount: number;
-      workspaceId: string | null;
-      visibility: string;
-      createdAt: string;
-    }>((cursor) => {
-      const q = new URLSearchParams(prefix);
-      if (cursor) q.set("cursor", cursor);
-      const suffix = q.toString() ? `?${q}` : "";
-      return `/projects${suffix}`;
-    });
-    return { data };
+
+    if (opts?.fetchAll) {
+      const data = await this.fetchAllCursorPages<{
+        id: string;
+        name: string;
+        slug: string;
+        prompt: string;
+        status: string;
+        previewUrl: string | null;
+        buildCount: number;
+        workspaceId: string | null;
+        visibility: string;
+        createdAt: string;
+      }>((cursor) => {
+        const q = new URLSearchParams(prefix);
+        if (cursor) q.set("cursor", cursor);
+        return `/projects?${q}`;
+      });
+      return { data };
+    }
+
+    const res = await this.request<{
+      data: Array<{
+        id: string;
+        name: string;
+        slug: string;
+        prompt: string;
+        status: string;
+        previewUrl: string | null;
+        buildCount: number;
+        workspaceId: string | null;
+        visibility: string;
+        createdAt: string;
+      }>;
+      nextCursor?: string | null;
+    }>(`/projects?${prefix}`);
+    return { data: res.data };
   }
 
   createProject(name: string, prompt: string, workspaceId?: string) {
@@ -486,17 +508,37 @@ export class ApiClient {
     return this.request<void>(`/projects/${id}`, { method: "DELETE" });
   }
 
-  async listMessages(projectId: string) {
+  async listMessages(projectId: string, opts?: { fetchAll?: boolean }) {
+    const fetchPage = async (cursor?: string) => {
+      const params = new URLSearchParams();
+      params.set("limit", "100");
+      if (cursor) params.set("cursor", cursor);
+      return this.request<{
+        data: Array<{
+          id: string;
+          role: string;
+          content: string;
+          createdAt: string;
+        }>;
+        nextCursor?: string | null;
+      }>(`/projects/${projectId}/messages?${params}`);
+    };
+
+    if (!opts?.fetchAll) {
+      const res = await fetchPage();
+      return { data: res.data };
+    }
+
     const data = await this.fetchAllCursorPages<{
       id: string;
       role: string;
       content: string;
       createdAt: string;
     }>((cursor) => {
-      const suffix = cursor
-        ? `?cursor=${encodeURIComponent(cursor)}`
-        : "";
-      return `/projects/${projectId}/messages${suffix}`;
+      const params = new URLSearchParams();
+      params.set("limit", "100");
+      if (cursor) params.set("cursor", cursor);
+      return `/projects/${projectId}/messages?${params}`;
     });
     return { data };
   }

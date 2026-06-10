@@ -16,10 +16,12 @@ export function Button({
   const base =
     "inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50";
   const variants = {
-    primary: "bg-nebula-600 hover:bg-nebula-700 text-white",
-    secondary: "bg-surface-card border border-surface-border hover:bg-gray-800",
-    ghost: "hover:bg-surface-card text-gray-300",
-    danger: "bg-red-600 hover:bg-red-700 text-white",
+    primary:
+      "bg-primary text-primary-foreground hover:opacity-90 shadow-glow",
+    secondary:
+      "bg-secondary border border-border text-secondary-foreground hover:bg-secondary/80",
+    ghost: "hover:bg-secondary text-muted-foreground hover:text-foreground",
+    danger: "bg-destructive hover:opacity-90 text-destructive-foreground",
   };
 
   return (

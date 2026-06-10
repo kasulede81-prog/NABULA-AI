@@ -1,13 +1,39 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import type { ReactNode } from "react";
-import { EnvVarsTab } from "@/components/workspace/tabs/EnvVarsTab";
-import { DomainsTab } from "@/components/workspace/tabs/DomainsTab";
-import { DatabaseTab } from "@/components/workspace/tabs/DatabaseTab";
-import { LogsTab } from "@/components/workspace/tabs/LogsTab";
-import { DeploymentsTab } from "@/components/workspace/tabs/DeploymentsTab";
-import { TeamTab } from "@/components/workspace/tabs/TeamTab";
 import type { WorkspaceView } from "./types";
+
+const tabLoading = (
+  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+    Loading…
+  </div>
+);
+
+const EnvVarsTab = dynamic(
+  () => import("../tabs/EnvVarsTab").then((m) => m.EnvVarsTab),
+  { ssr: false, loading: () => tabLoading }
+);
+const DomainsTab = dynamic(
+  () => import("../tabs/DomainsTab").then((m) => m.DomainsTab),
+  { ssr: false, loading: () => tabLoading }
+);
+const DatabaseTab = dynamic(
+  () => import("../tabs/DatabaseTab").then((m) => m.DatabaseTab),
+  { ssr: false, loading: () => tabLoading }
+);
+const LogsTab = dynamic(
+  () => import("../tabs/LogsTab").then((m) => m.LogsTab),
+  { ssr: false, loading: () => tabLoading }
+);
+const DeploymentsTab = dynamic(
+  () => import("../tabs/DeploymentsTab").then((m) => m.DeploymentsTab),
+  { ssr: false, loading: () => tabLoading }
+);
+const TeamTab = dynamic(
+  () => import("../tabs/TeamTab").then((m) => m.TeamTab),
+  { ssr: false, loading: () => tabLoading }
+);
 
 interface WorkspaceMainPanelProps {
   view: WorkspaceView;

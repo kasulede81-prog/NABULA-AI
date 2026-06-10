@@ -41,8 +41,8 @@ export function BrandTitle({ className }: { className?: string }) {
 
 export function BrandHero({ className }: { className?: string }) {
   return (
-    <h1 className={cn("font-bold text-white", className)}>
-      {BRAND_SHORT} <span className="text-nebula-500">dev</span>
+    <h1 className={cn("font-bold text-foreground", className)}>
+      {BRAND_SHORT} <span className="text-gradient">dev</span>
     </h1>
   );
 }

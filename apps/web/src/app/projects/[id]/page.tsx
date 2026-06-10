@@ -4,16 +4,16 @@ import { use, useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useSSE } from "@/hooks/useSSE";
 import { useWorkspace } from "@/hooks/useWorkspace";
-import { ChatPanel } from "@/components/chat/ChatPanel";
-import { FileTree } from "@/components/workspace/FileTree";
 import {
+  ChatPanel,
+  DeployModal,
+  FileTree,
+  GitHubExportPanel,
   MonacoEditorPanel,
+  PreviewPanel,
   type EditorTab,
-} from "@/components/workspace/MonacoEditorPanel";
-import { PreviewPanel } from "@/components/workspace/PreviewPanel";
+} from "@/components/workspace/lazy-workspace";
 import { ProgressFeed } from "@/components/workspace/ProgressFeed";
-import { GitHubExportPanel } from "@/components/workspace/GitHubExportPanel";
-import { DeployModal } from "@/components/workspace/DeployModal";
 import { WorkspaceSidebar } from "@/components/workspace/shell/WorkspaceSidebar";
 import { WorkspaceTopBar } from "@/components/workspace/shell/WorkspaceTopBar";
 import { WorkspaceMainPanel } from "@/components/workspace/shell/WorkspaceMainPanel";
@@ -30,7 +30,7 @@ export default function ProjectWorkspacePage({
   params: Promise<{ id: string }>;
 }) {
   const { id: projectId } = use(params);
-  const { activeWorkspaceId } = useWorkspace();
+  const { activeWorkspaceId, loading: workspaceLoading } = useWorkspace();
   const [view, setView] = useState<WorkspaceView>("agent");
   const [deployOpen, setDeployOpen] = useState(false);
   const [project, setProject] = useState<{
@@ -72,6 +72,7 @@ export default function ProjectWorkspacePage({
   }, [projectId]);
 
   useEffect(() => {
+    if (workspaceLoading) return;
     setProjectsLoading(true);
     api
       .listProjects(
@@ -82,7 +83,7 @@ export default function ProjectWorkspacePage({
       .then((res) => setProjects(res.data))
       .catch(() => setProjects([]))
       .finally(() => setProjectsLoading(false));
-  }, [activeWorkspaceId]);
+  }, [activeWorkspaceId, workspaceLoading]);
 
   useEffect(() => {
     return () => {
@@ -257,12 +258,14 @@ export default function ProjectWorkspacePage({
         </div>
       </div>
 
-      <DeployModal
-        open={deployOpen}
-        onClose={() => setDeployOpen(false)}
-        projectId={projectId}
-        projectName={project?.name ?? "Project"}
-      />
+      {deployOpen ? (
+        <DeployModal
+          open={deployOpen}
+          onClose={() => setDeployOpen(false)}
+          projectId={projectId}
+          projectName={project?.name ?? "Project"}
+        />
+      ) : null}
     </div>
   );
 }

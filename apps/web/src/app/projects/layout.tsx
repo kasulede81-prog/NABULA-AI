@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
-import { Header } from "@/components/layout/Header";
+import { AppShell } from "@/components/layout/AppShell";
 
 const PROJECT_WORKSPACE = /^\/projects\/(?!new$)[^/]+$/;
 
@@ -21,6 +21,10 @@ export default function ProjectsLayout({
     if (!loading && !user) router.replace("/login");
   }, [user, loading, router]);
 
+  if (!loading && !user) {
+    return null;
+  }
+
   if (loading || !user) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
@@ -33,10 +37,5 @@ export default function ProjectsLayout({
     return <>{children}</>;
   }
 
-  return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <Header />
-      <main className="flex-1">{children}</main>
-    </div>
-  );
+  return <AppShell>{children}</AppShell>;
 }

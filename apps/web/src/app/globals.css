@@ -108,6 +108,9 @@
   .bg-gradient-accent {
     background: var(--gradient-accent);
   }
+  .bg-gradient-mesh {
+    background: var(--gradient-mesh);
+  }
   .text-gradient {
     background: var(--gradient-primary);
     -webkit-background-clip: text;

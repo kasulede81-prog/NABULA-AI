@@ -49,7 +49,7 @@ export function ChatPanel({
   const lastEventCount = useRef(0);
 
   const loadMessages = useCallback(async () => {
-    const res = await api.listMessages(projectId);
+    const res = await api.listMessages(projectId, { fetchAll: true });
     setMessages(res.data);
   }, [projectId]);
 
@@ -70,7 +70,14 @@ export function ChatPanel({
 
     for (const event of newEvents) {
       if (event.type === SseEvents.MESSAGE_CREATED) {
-        shouldReload = true;
+        const msg = event.data as unknown as Message | undefined;
+        if (msg?.id) {
+          setMessages((prev) =>
+            prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]
+          );
+        } else {
+          shouldReload = true;
+        }
       }
       if (event.type === SseEvents.PROJECT_UPDATED) {
         const status = (event.data as { status?: string }).status;

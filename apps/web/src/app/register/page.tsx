@@ -6,6 +6,8 @@ import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { BrandMark } from "@/components/brand/BrandMark";
+import { BRAND_TAGLINE } from "@/lib/brand";
 
 export default function RegisterPage() {
   const { register, error } = useAuth();
@@ -29,9 +31,15 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4">
-      <div className="w-full max-w-md rounded-xl border border-surface-border bg-surface-card p-8">
-        <h1 className="mb-6 text-2xl font-bold text-white">Create Account</h1>
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4">
+      <div className="pointer-events-none absolute inset-0 bg-gradient-mesh opacity-60" />
+      <div className="relative w-full max-w-md rounded-xl border border-border bg-card/80 p-8 shadow-elegant backdrop-blur-sm">
+        <div className="mb-6 flex flex-col items-center text-center">
+          <BrandMark compact className="mb-3" />
+          <BrandMark className="text-lg" />
+          <p className="mt-2 text-sm text-muted-foreground">{BRAND_TAGLINE}</p>
+        </div>
+        <h1 className="mb-6 text-xl font-semibold">Create account</h1>
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input
             label="Name"
@@ -54,15 +62,15 @@ export default function RegisterPage() {
             minLength={8}
             required
           />
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-destructive">{error}</p>}
           <Button type="submit" loading={loading} className="w-full">
             Register
           </Button>
         </form>
-        <p className="mt-4 text-center text-sm text-gray-500">
+        <p className="mt-4 text-center text-sm text-muted-foreground">
           Already have an account?{" "}
-          <Link href="/login" className="text-nebula-500 hover:underline">
-            Login
+          <Link href="/login" className="text-primary hover:underline">
+            Sign in
           </Link>
         </p>
       </div>

@@ -8,9 +8,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { usePathname } from "next/navigation";
 import { api } from "@/lib/api";
+import { hasStoredToken } from "@/lib/auth-storage";
+import { useAuth } from "@/hooks/useAuth";
 
 const STORAGE_KEY = "nebula_workspace_id";
+
+const WORKSPACE_ROUTES = /^\/(projects|workspaces|settings)(\/|$)/;
 
 export interface WorkspaceSummary {
   id: string;
@@ -33,10 +38,22 @@ interface WorkspaceContextValue {
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
+function readStoredWorkspaceId(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(STORAGE_KEY);
+}
+
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const { loading: authLoading, user } = useAuth();
+  const needsWorkspace = WORKSPACE_ROUTES.test(pathname ?? "");
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
-  const [activeWorkspaceId, setActiveWorkspaceIdState] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [activeWorkspaceId, setActiveWorkspaceIdState] = useState<string | null>(
+    readStoredWorkspaceId
+  );
+  const [loading, setLoading] = useState(
+    () => needsWorkspace && hasStoredToken()
+  );
 
   const refreshWorkspaces = useCallback(async () => {
     if (!api.getToken()) {
@@ -47,7 +64,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     try {
       const res = await api.listWorkspaces();
       setWorkspaces(res.data);
-      const stored = localStorage.getItem(STORAGE_KEY);
+      const stored = readStoredWorkspaceId();
       if (stored && res.data.some((w) => w.id === stored)) {
         setActiveWorkspaceIdState(stored);
       }
@@ -59,8 +76,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!needsWorkspace) {
+      setLoading(false);
+      return;
+    }
+    if (authLoading) return;
+    if (!user) {
+      setWorkspaces([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     void refreshWorkspaces();
-  }, [refreshWorkspaces]);
+  }, [needsWorkspace, authLoading, user, refreshWorkspaces]);
 
   const setActiveWorkspaceId = useCallback((id: string | null) => {
     setActiveWorkspaceIdState(id);
