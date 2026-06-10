@@ -1,0 +1,6 @@
+{
+  "buildCommand": "pnpm turbo build --filter=@nebula/web",
+  "installCommand": "pnpm install --frozen-lockfile",
+  "framework": "nextjs",
+  "outputDirectory": "apps/web/.next"
+}
