@@ -36,6 +36,20 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function getAuthErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof TypeError) {
+    return "Cannot reach API server. Check NEXT_PUBLIC_API_URL (or API_PUBLIC_URL on Vercel).";
+  }
+  const apiErr = err as ApiError;
+  if (apiErr?.error?.message) {
+    if (apiErr.error.code === "HTTP_ERROR" && apiErr.error.message.includes("404")) {
+      return "API not found (404). On Vercel set API_PUBLIC_URL to your Railway public URL, or set NEXT_PUBLIC_API_URL=https://YOUR-SERVICE.up.railway.app/v1";
+    }
+    return apiErr.error.message;
+  }
+  return fallback;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -80,8 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await refresh();
       return result;
     } catch (err) {
-      const msg = (err as ApiError).error?.message ?? "Registration failed";
-      setError(msg);
+      setError(getAuthErrorMessage(err, "Registration failed"));
       throw err;
     }
   };
@@ -94,8 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await refresh();
       return result;
     } catch (err) {
-      const msg = (err as ApiError).error?.message ?? "Login failed";
-      setError(msg);
+      setError(getAuthErrorMessage(err, "Login failed"));
       throw err;
     }
   };
