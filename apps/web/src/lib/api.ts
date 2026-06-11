@@ -68,7 +68,24 @@ export class ApiClient {
         error: { code: "INVALID_RESPONSE", message: "Invalid server response" },
       } satisfies ApiError;
     }
-    if (!res.ok) throw data as ApiError;
+    if (!res.ok) {
+      // Fastify default error shape: { statusCode, code, message }
+      const fastify = data as {
+        error?: { code?: string; message?: string };
+        message?: string;
+        code?: string;
+      };
+      if (fastify.error?.message) throw data as ApiError;
+      if (typeof fastify.message === "string") {
+        throw {
+          error: {
+            code: fastify.code ?? "HTTP_ERROR",
+            message: fastify.message,
+          },
+        } satisfies ApiError;
+      }
+      throw data as ApiError;
+    }
     return data as T;
   }
 
