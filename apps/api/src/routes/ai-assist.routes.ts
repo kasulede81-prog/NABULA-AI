@@ -79,7 +79,10 @@ export async function aiAssistRoutes(app: FastifyInstance) {
     }
   );
 
-  app.post("/projects/:projectId/restore", async (request, reply) => {
+  app.post(
+    "/projects/:projectId/restore",
+    { preHandler: rateLimitByUser("ai") },
+    async (request, reply) => {
     const { userId } = request as AuthenticatedRequest;
     const { projectId } = request.params as { projectId: string };
     const parsed = restoreSchema.safeParse(request.body);
@@ -105,5 +108,6 @@ export async function aiAssistRoutes(app: FastifyInstance) {
       }
       throw err;
     }
-  });
+  }
+  );
 }

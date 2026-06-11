@@ -95,14 +95,20 @@ export class BillingCreditsService {
     const nextRenews = new Date(now);
     nextRenews.setMonth(nextRenews.getMonth() + 1);
 
-    await prisma.subscription.update({
-      where: { userId },
+    // Atomic claim: the renewsAt guard in the WHERE clause means only one
+    // concurrent request performs the grant — others see count === 0.
+    const claimed = await prisma.subscription.updateMany({
+      where: {
+        userId,
+        OR: [{ renewsAt: null }, { renewsAt: { lte: now } }],
+      },
       data: {
         creditsBalance: limits.monthlyCredits,
         renewsAt: nextRenews,
         buildsUsedThisPeriod: 0,
       },
     });
+    if (claimed.count === 0) return;
 
     await prisma.creditLedger.create({
       data: {

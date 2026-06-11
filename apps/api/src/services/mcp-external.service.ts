@@ -1,4 +1,5 @@
 import type { McpServerConfig } from "./mcp-bridge.service";
+import { parsePublicHttpUrl } from "../lib/ssrf-guard";
 
 interface JsonRpcResponse {
   result?: {
@@ -63,10 +64,16 @@ export class McpExternalService {
   }
 
   private async rpc(url: string, body: Record<string, unknown>) {
+    // User-configured URL — refuse anything resolving into the internal
+    // network (SSRF guard, incl. DNS rebinding).
+    const safeUrl = await parsePublicHttpUrl(url);
+    if (!safeUrl) {
+      throw new Error("MCP server URL is not allowed (private or unresolvable host)");
+    }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
     try {
-      const res = await fetch(url, {
+      const res = await fetch(safeUrl.toString(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),

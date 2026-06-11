@@ -6,6 +6,9 @@ import { SseEvents } from "@nebula/shared";
 
 export class PreviewSyncService {
   private syncing = new Set<string>();
+  // Writes arriving mid-sync are coalesced here and flushed afterwards,
+  // so bursts never leave the sandbox stale.
+  private pending = new Map<string, Map<string, string>>();
 
   async syncProjectFiles(
     projectId: string,
@@ -25,6 +28,10 @@ export class PreviewSyncService {
     }
 
     if (this.syncing.has(projectId)) {
+      // Coalesce: queue the latest content per path for after this sync.
+      const queue = this.pending.get(projectId) ?? new Map<string, string>();
+      for (const file of files) queue.set(file.path, file.content);
+      this.pending.set(projectId, queue);
       return { synced: false, fileCount: 0 };
     }
 
@@ -52,7 +59,18 @@ export class PreviewSyncService {
       return { synced: false, fileCount: 0 };
     } finally {
       this.syncing.delete(projectId);
+      this.flushPending(projectId);
     }
+  }
+
+  private flushPending(projectId: string) {
+    const queue = this.pending.get(projectId);
+    if (!queue || queue.size === 0) return;
+    this.pending.delete(projectId);
+    const files = Array.from(queue, ([path, content]) => ({ path, content }));
+    setImmediate(() => {
+      void this.syncProjectFiles(projectId, files);
+    });
   }
 
   scheduleSync(

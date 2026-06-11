@@ -18,10 +18,22 @@ export default function IntegrationsSettingsPage() {
   const [data, setData] = useState<Awaited<
     ReturnType<typeof api.getIntegrations>
   >["data"] | null>(null);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
-    void api.getIntegrations().then((res) => setData(res.data));
+    void api
+      .getIntegrations()
+      .then((res) => setData(res.data))
+      .catch(() => setLoadError(true));
   }, []);
+
+  if (loadError) {
+    return (
+      <div className="p-6 text-sm text-red-400">
+        Failed to load integration status — is the API running?
+      </div>
+    );
+  }
 
   if (!data) {
     return (

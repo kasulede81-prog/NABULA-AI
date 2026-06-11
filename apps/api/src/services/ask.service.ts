@@ -72,14 +72,20 @@ export class AskService {
             { type: "text" as const, text: options.agentContent },
           ]
         : options.agentContent;
+    const chronological = history
+      .reverse()
+      .filter((m) => m.role === "user" || m.role === "assistant");
+    // The message being answered was already persisted before scheduling —
+    // drop it from history so it isn't sent twice (we append the enriched
+    // version with context/images below).
+    if (chronological[chronological.length - 1]?.role === "user") {
+      chronological.pop();
+    }
     const messages = [
-      ...history
-        .reverse()
-        .filter((m) => m.role === "user" || m.role === "assistant")
-        .map((m) => ({
-          role: m.role as "user" | "assistant",
-          content: m.content,
-        })),
+      ...chronological.map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      })),
       { role: "user" as const, content: userContent },
     ];
 

@@ -99,6 +99,20 @@ export function MonacoEditorPanel({
   onOpenFileRef.current = onOpenFile;
   const [symbols, setSymbols] = useState<CodeSymbol[]>([]);
   const [filePaths, setFilePaths] = useState<string[]>([]);
+  const completionsRegisteredRef = useRef(false);
+
+  // onMount fires once with the initial (empty) symbols/filePaths — once
+  // they load asynchronously, re-register the completions provider.
+  useEffect(() => {
+    const monaco = monacoRef.current;
+    if (!monaco || !completionsRegisteredRef.current) return;
+    completionDisposeRef.current?.();
+    completionDisposeRef.current = registerProjectCompletions(
+      monaco,
+      symbols,
+      filePaths
+    );
+  }, [symbols, filePaths]);
 
   useEffect(() => {
     let cancelled = false;
@@ -126,6 +140,17 @@ export function MonacoEditorPanel({
     // Leaving a file closes its inline diff view.
     setInlineDiffOpen(false);
   }, [activePath]);
+
+  // Keep background LSP models in sync when tab contents change externally
+  // (agent writes via SSE re-read files into tabs). No-op while typing,
+  // because the editor model already holds the same content.
+  useEffect(() => {
+    const monaco = monacoRef.current;
+    if (!monaco) return;
+    for (const tab of tabs) {
+      syncProjectModel(monaco, tab.path, tab.content);
+    }
+  }, [tabs]);
 
   const updateActiveContent = useCallback(
     (content: string) => {
@@ -158,11 +183,19 @@ export function MonacoEditorPanel({
     if (!monaco || !activePathRef.current) return [];
     return monaco.editor
       .getModelMarkers({})
-      .filter(
-        (m: MonacoEditorTypes.editor.IMarker) =>
-          m.resource.path.replace(/^\//, "") === activePathRef.current &&
+      .filter((m: MonacoEditorTypes.editor.IMarker) => {
+        // Uri.path percent-encodes characters like [ ] in Next.js routes.
+        let markerPath = m.resource.path.replace(/^\//, "");
+        try {
+          markerPath = decodeURIComponent(markerPath);
+        } catch {
+          /* keep raw path */
+        }
+        return (
+          markerPath === activePathRef.current &&
           m.severity >= 8 // MarkerSeverity.Error
-      );
+        );
+      });
   }, []);
 
   // Poll diagnostics so the "Fix with AI" button reflects current errors.
@@ -343,6 +376,7 @@ export function MonacoEditorPanel({
         symbols,
         filePaths
       );
+      completionsRegisteredRef.current = true;
       aiTabDisposeRef.current?.();
       aiTabDisposeRef.current = registerAiTabCompletions(
         monaco,
@@ -351,16 +385,18 @@ export function MonacoEditorPanel({
         () => recentEditsRef.current.join("\n")
       );
       if (!lspDisposeRef.current) {
-        void setupProjectIntelligence(monaco, projectId, (path, line, column) => {
-          pendingRevealRef.current = { path, line, column };
-          if (path !== activePathRef.current) {
-            onOpenFileRef.current?.(path);
-          } else {
-            revealPending(editor);
+        lspDisposeRef.current = setupProjectIntelligence(
+          monaco,
+          projectId,
+          (path, line, column) => {
+            pendingRevealRef.current = { path, line, column };
+            if (path !== activePathRef.current) {
+              onOpenFileRef.current?.(path);
+            } else {
+              revealPending(editor);
+            }
           }
-        }).then((dispose) => {
-          lspDisposeRef.current = dispose;
-        });
+        );
       }
     },
     [openInlineEdit, symbols, filePaths, projectId]

@@ -45,10 +45,18 @@ export function WorkspaceTopBar({
   const { toast } = useToast();
   const contextSlug = activeWorkspace?.slug ?? "personal";
 
-  const shareProject = () => {
+  const shareProject = async () => {
     const url = `${window.location.origin}/projects/${projectId}`;
-    void navigator.clipboard.writeText(url);
-    toast({ title: "Link copied", description: url });
+    try {
+      await navigator.clipboard.writeText(url);
+      toast({ title: "Link copied", description: url });
+    } catch {
+      toast({
+        title: "Couldn't copy link",
+        description: url,
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -84,7 +92,7 @@ export function WorkspaceTopBar({
           variant="outline"
           size="sm"
           className="gap-1.5 border-border bg-secondary/60"
-          onClick={shareProject}
+          onClick={() => void shareProject()}
         >
           <Share2 className="h-3.5 w-3.5" /> Share
         </ShadcnButton>

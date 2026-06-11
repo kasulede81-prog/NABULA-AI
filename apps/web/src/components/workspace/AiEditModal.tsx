@@ -54,11 +54,12 @@ export function AiEditModal({
     setError(null);
     try {
       const saved = await api.applyAiEdit(projectId, path, modifiedContent);
-      if (saved.pendingReview) {
+      if (saved.pendingReview || saved.version == null) {
+        // null version means the write was staged, not committed to the VFS.
         setError("Change staged for review — open the changeset panel to apply.");
         return;
       }
-      onApplied(path, modifiedContent, saved.version ?? 0);
+      onApplied(path, modifiedContent, saved.version);
     } catch (err) {
       const apiErr = err as { error?: { message?: string } };
       setError(apiErr.error?.message ?? "Apply failed");

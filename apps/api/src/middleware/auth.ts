@@ -11,13 +11,14 @@ export interface AuthenticatedRequest extends FastifyRequest {
 export async function authenticate(
   request: FastifyRequest,
   reply: FastifyReply
-): Promise<void> {
+): Promise<FastifyReply | void> {
   const token = readSessionToken(request);
   if (!token) {
-    reply.status(401).send({
+    // Returning the reply makes Fastify stop the lifecycle — without it the
+    // route handler can still run after the 401 was sent.
+    return reply.status(401).send({
       error: { code: "UNAUTHORIZED", message: "Missing authorization token" },
     });
-    return;
   }
 
   try {
@@ -25,16 +26,15 @@ export async function authenticate(
     const user = await authService.validateSession(payload.sessionId);
 
     if (!user || user.id !== payload.userId) {
-      reply.status(401).send({
+      return reply.status(401).send({
         error: { code: "UNAUTHORIZED", message: "Invalid or expired session" },
       });
-      return;
     }
 
     (request as AuthenticatedRequest).userId = user.id;
     (request as AuthenticatedRequest).sessionId = payload.sessionId;
   } catch {
-    reply.status(401).send({
+    return reply.status(401).send({
       error: { code: "UNAUTHORIZED", message: "Invalid token" },
     });
   }

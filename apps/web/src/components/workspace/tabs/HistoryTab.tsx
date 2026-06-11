@@ -42,6 +42,7 @@ export function HistoryTab({ projectId, onOpenFile }: HistoryTabProps) {
   const [after, setAfter] = useState("");
   const [diffLoading, setDiffLoading] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -69,14 +70,17 @@ export function HistoryTab({ projectId, onOpenFile }: HistoryTabProps) {
   const showDiff = async (entry: TimelineEntry) => {
     setSelected(entry);
     setDiffLoading(true);
+    setError(null);
     try {
       const current = await api.readFile(projectId, entry.path);
       const archived = await api.readFile(projectId, entry.path, entry.version);
       setBefore(archived.content);
       setAfter(current.content);
-    } catch {
+    } catch (err) {
       setBefore("");
       setAfter("");
+      const apiErr = err as { error?: { message?: string } };
+      setError(apiErr.error?.message ?? "Failed to load diff");
     } finally {
       setDiffLoading(false);
     }
@@ -85,10 +89,14 @@ export function HistoryTab({ projectId, onOpenFile }: HistoryTabProps) {
   const restore = async () => {
     if (!selected) return;
     setRestoring(true);
+    setError(null);
     try {
       await api.restoreFileVersion(projectId, selected.path, selected.version);
       await load();
       onOpenFile?.(selected.path);
+    } catch (err) {
+      const apiErr = err as { error?: { message?: string } };
+      setError(apiErr.error?.message ?? "Restore failed");
     } finally {
       setRestoring(false);
     }
@@ -102,6 +110,11 @@ export function HistoryTab({ projectId, onOpenFile }: HistoryTabProps) {
           Branch <span className="font-mono text-foreground">{branch}</span> —
           snapshots and per-file versions
         </p>
+        {error && (
+          <p className="mt-1 rounded-md border border-red-900/50 bg-red-950/30 px-2 py-1 text-xs text-red-300">
+            {error}
+          </p>
+        )}
       </div>
 
       <div className="flex min-h-0 flex-1">

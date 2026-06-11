@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Search, FileCode } from "lucide-react";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -28,6 +28,7 @@ export function FileSearchPalette({
   >([]);
   const [loading, setLoading] = useState(false);
   const [activeIdx, setActiveIdx] = useState(0);
+  const searchSeqRef = useRef(0);
 
   useEffect(() => {
     if (!open) {
@@ -51,11 +52,16 @@ export function FileSearchPalette({
       setResults([]);
       return;
     }
+    // Sequence requests — a slow response for an old query must not
+    // overwrite results for the current one.
+    const requestId = ++searchSeqRef.current;
+    const isCurrent = () => requestId === searchSeqRef.current;
     const timer = setTimeout(() => {
       setLoading(true);
       void api
         .searchProjectFiles(projectId, query.trim())
         .then(async (res) => {
+          if (!isCurrent()) return;
           if (res.data.length >= 3) {
             setResults(res.data);
             setActiveIdx(0);
@@ -72,6 +78,7 @@ export function FileSearchPalette({
               kind: "file" as const,
             })),
           ];
+          if (!isCurrent()) return;
           const seen = new Set<string>();
           setResults(
             merged.filter((r) => {
@@ -82,8 +89,12 @@ export function FileSearchPalette({
           );
           setActiveIdx(0);
         })
-        .catch(() => setResults([]))
-        .finally(() => setLoading(false));
+        .catch(() => {
+          if (isCurrent()) setResults([]);
+        })
+        .finally(() => {
+          if (isCurrent()) setLoading(false);
+        });
     }, 200);
     return () => clearTimeout(timer);
   }, [open, projectId, query]);
@@ -118,7 +129,9 @@ export function FileSearchPalette({
             onKeyDown={(e) => {
               if (e.key === "ArrowDown") {
                 e.preventDefault();
-                setActiveIdx((i) => Math.min(i + 1, results.length - 1));
+                setActiveIdx((i) =>
+                  Math.min(i + 1, Math.max(results.length - 1, 0))
+                );
               }
               if (e.key === "ArrowUp") {
                 e.preventDefault();

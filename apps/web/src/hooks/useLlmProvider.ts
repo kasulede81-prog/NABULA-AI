@@ -18,10 +18,15 @@ export function useLlmProvider(projectId: string) {
       .listLlmProviders()
       .then((res) => {
         setProviders(res.data);
-        const stored = localStorage.getItem(STORAGE_KEY) as LlmProviderId | null;
+        let stored: string | null = null;
+        try {
+          stored = localStorage.getItem(STORAGE_KEY);
+        } catch {
+          /* storage unavailable (private mode) */
+        }
         const valid =
           stored && res.data.some((p) => p.id === stored)
-            ? stored
+            ? (stored as LlmProviderId)
             : (res.data.find((p) => p.default)?.id ?? res.data[0]?.id ?? "");
         setSelectedState(valid);
       })
@@ -31,7 +36,11 @@ export function useLlmProvider(projectId: string) {
 
   const setSelected = useCallback((id: LlmProviderId) => {
     setSelectedState(id);
-    localStorage.setItem(STORAGE_KEY, id);
+    try {
+      localStorage.setItem(STORAGE_KEY, id);
+    } catch {
+      /* storage unavailable (private mode) */
+    }
   }, []);
 
   return { providers, selected, setSelected, loading };

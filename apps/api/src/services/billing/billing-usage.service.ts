@@ -81,12 +81,27 @@ export class BillingUsageService {
       });
     }
 
-    const creditsAfter = await billingCreditsService.deductCredits(
-      params.userId,
-      cost,
-      refreshed.plan,
-      { eventType: params.eventType, projectId: params.projectId }
-    );
+    let creditsAfter: number;
+    try {
+      creditsAfter = await billingCreditsService.deductCredits(
+        params.userId,
+        cost,
+        refreshed.plan,
+        { eventType: params.eventType, projectId: params.projectId }
+      );
+    } catch (err) {
+      // Balance changed between assertQuota and deduct (TOCTOU) — surface
+      // as a 429 quota error, not an unhandled 500.
+      if (err instanceof Error && err.message === "INSUFFICIENT_CREDITS") {
+        throw new QuotaExceededError(
+          "INSUFFICIENT_CREDITS",
+          "Insufficient credits for this action.",
+          429,
+          { required: cost }
+        );
+      }
+      throw err;
+    }
 
     await prisma.usageEvent.create({
       data: {

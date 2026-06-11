@@ -65,8 +65,17 @@ export function EnvVarsTab({ projectId }: { projectId: string }) {
 
   const remove = async (id: string) => {
     if (!confirm("Delete this variable?")) return;
-    await api.deleteProjectEnvVar(projectId, id);
-    await load();
+    try {
+      await api.deleteProjectEnvVar(projectId, id);
+      await load();
+    } catch (err) {
+      toast({
+        title: "Couldn't delete",
+        description:
+          (err as { error?: { message?: string } }).error?.message ?? "Failed",
+        variant: "destructive",
+      });
+    }
   };
 
   if (forbidden) {

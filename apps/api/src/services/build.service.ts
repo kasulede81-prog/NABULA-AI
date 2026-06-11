@@ -84,18 +84,20 @@ export class BuildService {
     const project = await projectService.get(projectId, userId);
     const shouldForce = forceReady ?? project.status === "clarifying";
 
+    // Acquire the lock BEFORE consuming quota — otherwise a concurrent
+    // request pays credits and then gets rejected with 409.
+    await clarifierLock.tryAcquire(projectId);
     try {
-      await subscriptionService.assertBuildAllowed(userId);
-      await subscriptionService.consumeAiSlot(userId, projectId);
-    } catch (err) {
-      if (err instanceof BuildLimitError) {
-        await this.handleBuildLimitReached(projectId, userId, err);
+      try {
+        await subscriptionService.assertBuildAllowed(userId);
+        await subscriptionService.consumeAiSlot(userId, projectId);
+      } catch (err) {
+        if (err instanceof BuildLimitError) {
+          await this.handleBuildLimitReached(projectId, userId, err);
+        }
+        throw err;
       }
-      throw err;
-    }
 
-    clarifierLock.tryAcquire(projectId);
-    try {
       this.assertNotCancelled(projectId);
       return await clarifierService.run(projectId, userId, shouldForce, options);
     } finally {
@@ -106,18 +108,19 @@ export class BuildService {
 
   /** Run builder with retry loop (max 2 retries). */
   async runBuilder(projectId: string, userId: string, options: PipelineRunOptions = {}) {
+    // Lock first, pay second — see runClarifier.
+    await builderLock.tryAcquire(projectId);
+
     try {
-      await subscriptionService.consumeBuildSlot(userId, projectId);
-    } catch (err) {
-      if (err instanceof BuildLimitError) {
-        await this.handleBuildLimitReached(projectId, userId, err);
+      try {
+        await subscriptionService.consumeBuildSlot(userId, projectId);
+      } catch (err) {
+        if (err instanceof BuildLimitError) {
+          await this.handleBuildLimitReached(projectId, userId, err);
+        }
+        throw err;
       }
-      throw err;
-    }
 
-    builderLock.tryAcquire(projectId);
-
-    try {
       let lastError = "";
       const maxAttempts = MAX_BUILD_RETRIES + 1;
 

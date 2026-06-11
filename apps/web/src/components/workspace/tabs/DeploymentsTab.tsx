@@ -38,6 +38,8 @@ export function DeploymentsTab({ projectId }: { projectId: string }) {
     try {
       const res = await api.listProjectDeployments(projectId);
       setRows(res.data as Deployment[]);
+    } catch {
+      /* polling — retry on next tick */
     } finally {
       setLoading(false);
     }
@@ -49,8 +51,14 @@ export function DeploymentsTab({ projectId }: { projectId: string }) {
     return () => clearInterval(interval);
   }, [load]);
 
-  const selectedLogs = Array.isArray(selected?.logs)
-    ? (selected!.logs as LogLine[])
+  // Render details from the freshest row — `selected` is a snapshot taken
+  // at click time and goes stale while the deployment progresses.
+  const selectedRow = selected
+    ? (rows.find((d) => d.id === selected.id) ?? selected)
+    : null;
+
+  const selectedLogs = Array.isArray(selectedRow?.logs)
+    ? (selectedRow!.logs as LogLine[])
     : [];
 
   return (
@@ -112,27 +120,27 @@ export function DeploymentsTab({ projectId }: { projectId: string }) {
             ))}
           </div>
         </div>
-        {selected && (
+        {selectedRow && (
           <div className="flex w-[420px] flex-col border-l border-border">
             <div className="flex h-10 items-center gap-2 border-b border-border px-4">
               <span
                 className={cn(
                   "h-2 w-2 rounded-full",
-                  statusColor[selected.status]
+                  statusColor[selectedRow.status]
                 )}
               />
               <span className="text-xs font-semibold uppercase">
-                {selected.status}
+                {selectedRow.status}
               </span>
-              {selected.url && (
+              {selectedRow.url && (
                 <a
-                  href={selected.url}
+                  href={selectedRow.url}
                   target="_blank"
                   rel="noreferrer"
                   className="ml-auto flex items-center gap-1 font-mono text-xs text-primary hover:underline"
                 >
                   <Globe className="h-3 w-3" />{" "}
-                  {selected.url.replace("https://", "")}
+                  {selectedRow.url.replace("https://", "")}
                 </a>
               )}
             </div>
@@ -159,9 +167,9 @@ export function DeploymentsTab({ projectId }: { projectId: string }) {
                   <span>{l.msg}</span>
                 </div>
               ))}
-              {selected.error && (
+              {selectedRow.error && (
                 <div className="px-4 py-2 text-xs text-destructive">
-                  {selected.error}
+                  {selectedRow.error}
                 </div>
               )}
             </div>

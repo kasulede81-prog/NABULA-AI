@@ -39,11 +39,12 @@ export function InlineEditPopover({
         path,
         res.data.modifiedContent
       );
-      if (saved.pendingReview) {
+      if (saved.pendingReview || saved.version == null) {
+        // null version means the write was staged, not committed to the VFS.
         setError("Change staged for review — open the changeset panel to apply.");
         return;
       }
-      onApplied(path, res.data.modifiedContent, saved.version ?? 0);
+      onApplied(path, res.data.modifiedContent, saved.version);
       onClose();
     } catch (err) {
       const apiErr = err as { error?: { message?: string } };

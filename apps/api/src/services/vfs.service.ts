@@ -297,6 +297,13 @@ export class VfsService {
       data: { path: toPath },
     });
 
+    // Keep the code index in sync — otherwise symbol/file search keeps
+    // returning the old path until a manual reindex.
+    await codeIndexService.removeFile(projectId, fromPath).catch(() => undefined);
+    await codeIndexService
+      .indexFile(projectId, toPath, file.content)
+      .catch(() => undefined);
+
     eventService.publish(projectId, SseEvents.FILE_DELETED, { path: fromPath });
     eventService.publish(projectId, SseEvents.FILE_CREATED, {
       path: file.path,
@@ -323,9 +330,19 @@ export class VfsService {
       throw new VfsError("NOT_FOUND", "File not found", 404);
     }
 
+    // Archive before deletion so checkpoint restore can resurrect the file.
+    await fileHistoryService.archiveVersion(
+      projectId,
+      path,
+      file.version,
+      file.content,
+      "user"
+    );
+
     await prisma.file.delete({
       where: { projectId_path: { projectId, path } },
     });
+    await codeIndexService.removeFile(projectId, path).catch(() => undefined);
 
     eventService.publish(projectId, SseEvents.FILE_DELETED, { path });
 

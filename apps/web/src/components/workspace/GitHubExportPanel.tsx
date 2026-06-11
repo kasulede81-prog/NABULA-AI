@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { SseEvents } from "@nebula/shared";
@@ -49,6 +49,7 @@ export function GitHubExportPanel({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const lastSeqRef = useRef(0);
 
   const refresh = useCallback(async () => {
     try {
@@ -66,29 +67,37 @@ export function GitHubExportPanel({
   }, [refresh]);
 
   useEffect(() => {
-    const last = sseEvents[sseEvents.length - 1];
-    if (!last) return;
+    // Process every new event — a STARTED followed by COMPLETED in the same
+    // SSE batch would otherwise leave the panel stuck on "busy".
+    const newEvents = sseEvents.filter((e) => e.seq > lastSeqRef.current);
+    if (newEvents.length === 0) return;
+    lastSeqRef.current = newEvents[newEvents.length - 1].seq;
 
-    if (
-      last.type === SseEvents.GITHUB_EXPORT_STARTED ||
-      last.type === SseEvents.GITHUB_SYNC_STARTED
-    ) {
-      setBusy(true);
-      setError(null);
-    }
-    if (
-      last.type === SseEvents.GITHUB_EXPORT_COMPLETED ||
-      last.type === SseEvents.GITHUB_SYNC_COMPLETED
-    ) {
-      setBusy(false);
-      void refresh();
-    }
-    if (
-      last.type === SseEvents.GITHUB_EXPORT_FAILED ||
-      last.type === SseEvents.GITHUB_SYNC_FAILED
-    ) {
-      setBusy(false);
-      setError((last.data as { message?: string }).message ?? "GitHub operation failed");
+    for (const event of newEvents) {
+      if (
+        event.type === SseEvents.GITHUB_EXPORT_STARTED ||
+        event.type === SseEvents.GITHUB_SYNC_STARTED
+      ) {
+        setBusy(true);
+        setError(null);
+      }
+      if (
+        event.type === SseEvents.GITHUB_EXPORT_COMPLETED ||
+        event.type === SseEvents.GITHUB_SYNC_COMPLETED
+      ) {
+        setBusy(false);
+        void refresh();
+      }
+      if (
+        event.type === SseEvents.GITHUB_EXPORT_FAILED ||
+        event.type === SseEvents.GITHUB_SYNC_FAILED
+      ) {
+        setBusy(false);
+        setError(
+          (event.data as { message?: string }).message ??
+            "GitHub operation failed"
+        );
+      }
     }
   }, [sseEvents, refresh]);
 

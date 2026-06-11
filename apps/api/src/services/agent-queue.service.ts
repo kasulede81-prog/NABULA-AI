@@ -9,6 +9,7 @@ import { buildService } from "./build.service";
 import type { PipelineRunOptions } from "../types/pipeline";
 
 const WORKER_INTERVAL_MS = 2000;
+const STALE_RUNNING_MS = 30 * 60 * 1000;
 
 export class AgentQueueService {
   private workerTimer: ReturnType<typeof setInterval> | null = null;
@@ -128,6 +129,20 @@ export class AgentQueueService {
     this.processing = true;
 
     try {
+      // Recover jobs orphaned by a crash mid-run — without this they stay
+      // "running" forever and block dedupe for their project/kind.
+      await prisma.agentQueueJob.updateMany({
+        where: {
+          status: "running",
+          startedAt: { lt: new Date(Date.now() - STALE_RUNNING_MS) },
+        },
+        data: {
+          status: "failed",
+          errorMessage: "Worker crashed or timed out while running this job",
+          completedAt: new Date(),
+        },
+      });
+
       const candidates = await prisma.agentQueueJob.findMany({
         where: { status: "pending" },
         orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
@@ -142,10 +157,12 @@ export class AgentQueueService {
           continue;
         }
 
-        await prisma.agentQueueJob.update({
-          where: { id: job.id },
+        // Atomic claim: only one worker can flip pending → running.
+        const claimed = await prisma.agentQueueJob.updateMany({
+          where: { id: job.id, status: "pending" },
           data: { status: "running", startedAt: new Date() },
         });
+        if (claimed.count === 0) continue;
 
         const options = (job.payload ?? {}) as PipelineRunOptions;
 

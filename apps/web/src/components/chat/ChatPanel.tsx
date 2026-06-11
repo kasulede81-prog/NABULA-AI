@@ -154,6 +154,7 @@ export function ChatPanel({
   const [chatMode, setChatMode] = useState<ChatMode>("agent");
   const [filePaths, setFilePaths] = useState<string[]>([]);
   const [images, setImages] = useState<AttachedImage[]>([]);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [applyingBlock, setApplyingBlock] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -181,9 +182,11 @@ export function ChatPanel({
   }, [messages]);
 
   useEffect(() => {
-    if (sseEvents.length <= lastEventCount.current) return;
-    const newEvents = sseEvents.slice(lastEventCount.current);
-    lastEventCount.current = sseEvents.length;
+    // Filter by monotonic seq — array length stalls at the ring-buffer cap,
+    // so index-based tracking would stop processing events after ~100.
+    const newEvents = sseEvents.filter((e) => e.seq > lastEventCount.current);
+    if (newEvents.length === 0) return;
+    lastEventCount.current = newEvents[newEvents.length - 1].seq;
 
     let shouldReload = false;
 
@@ -377,6 +380,7 @@ export function ChatPanel({
       return;
 
     setSending(true);
+    setSendError(null);
     try {
       const attached = extractMentionPaths(input);
       const msg = await api.sendMessage(projectId, input.trim(), {
@@ -394,6 +398,9 @@ export function ChatPanel({
       setInput("");
       setImages([]);
       setMentionQuery(null);
+    } catch (err) {
+      const apiErr = err as { error?: { message?: string } };
+      setSendError(apiErr.error?.message ?? "Failed to send message");
     } finally {
       setSending(false);
     }
@@ -617,6 +624,11 @@ export function ChatPanel({
       </div>
 
       <form onSubmit={handleSend} className="relative border-t border-border p-4">
+        {sendError && (
+          <div className="mb-2 rounded-md border border-red-900/50 bg-red-950/30 px-2 py-1 text-xs text-red-300">
+            {sendError}
+          </div>
+        )}
         {mentionQuery !== null && allMentionOptions.length > 0 && (
           <div className="absolute bottom-full left-4 right-4 mb-1 max-h-40 overflow-y-auto rounded-lg border border-border bg-popover py-1 shadow-elegant">
             {allMentionOptions.map((opt, idx) => (

@@ -6,6 +6,11 @@ export interface ApiError {
   error: { code: string; message: string };
 }
 
+/** Encode each segment of a VFS path for use in a URL (keeps `/` separators). */
+function encodeFilePath(path: string): string {
+  return path.split("/").map(encodeURIComponent).join("/");
+}
+
 export class ApiClient {
   private token: string | null = null;
 
@@ -45,7 +50,24 @@ export class ApiClient {
 
     if (res.status === 204) return undefined as T;
 
-    const data = await res.json();
+    // Gateways/proxies can return HTML or empty bodies — surface those as
+    // structured ApiErrors instead of raw JSON SyntaxErrors.
+    let data: unknown;
+    try {
+      data = await res.json();
+    } catch {
+      if (!res.ok) {
+        throw {
+          error: {
+            code: "HTTP_ERROR",
+            message: `Request failed with status ${res.status}`,
+          },
+        } satisfies ApiError;
+      }
+      throw {
+        error: { code: "INVALID_RESPONSE", message: "Invalid server response" },
+      } satisfies ApiError;
+    }
     if (!res.ok) throw data as ApiError;
     return data as T;
   }
@@ -750,10 +772,10 @@ export class ApiClient {
 
   restoreFileVersion(projectId: string, path: string, version: number) {
     return this.request<{ path: string; version: number }>(
-      `/projects/${projectId}/files/${path}/restore`,
+      `/projects/${projectId}/files/restore-version`,
       {
         method: "POST",
-        body: JSON.stringify({ version }),
+        body: JSON.stringify({ path, version }),
       }
     );
   }
@@ -903,7 +925,7 @@ export class ApiClient {
       path: string;
       content: string;
       version: number;
-    }>(`/projects/${projectId}/files/${path}${params}`);
+    }>(`/projects/${projectId}/files/${encodeFilePath(path)}${params}`);
   }
 
   writeFile(projectId: string, path: string, content: string) {
@@ -918,7 +940,7 @@ export class ApiClient {
 
   deleteFile(projectId: string, path: string) {
     return this.request<{ path: string }>(
-      `/projects/${projectId}/files/${path}`,
+      `/projects/${projectId}/files/${encodeFilePath(path)}`,
       { method: "DELETE" }
     );
   }

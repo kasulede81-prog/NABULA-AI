@@ -30,7 +30,8 @@ const QUICKFIX_SYSTEM = `You are an expert code fixer. The user provides a file 
 Fix ALL the listed errors with minimal changes. Preserve formatting and intent.
 Return ONLY the complete corrected file content. No markdown fences, no commentary.`;
 
-const FORBIDDEN_COMMANDS = /rm\s+-rf\s+[/~]|mkfs|:\(\)\s*\{|dd\s+if=/i;
+const FORBIDDEN_COMMANDS =
+  /rm\s+(-\w*r\w*f|-\w*f\w*r)\w*\s+[/~]|mkfs|:\(\)\s*\{|dd\s+if=|>\s*\/dev\/sd|chmod\s+(-R\s+)?777\s+\/|curl[^|]*\|\s*(ba)?sh|wget[^|]*\|\s*(ba)?sh|shutdown|reboot\b/i;
 
 export class AiAssistService {
   async terminalCommand(

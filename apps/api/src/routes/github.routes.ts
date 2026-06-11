@@ -204,8 +204,9 @@ export async function githubRoutes(app: FastifyInstance) {
         const { projectId } = request.params as { projectId: string };
 
         try {
-          await consumeQuota(userId, "github_export", projectId);
+          // requireQuota already asserted; charge only on success.
           const result = await githubService.createRepository(projectId, userId);
+          await consumeQuota(userId, "github_export", projectId);
           await githubTrackingService.recordCreated(projectId, userId);
           return reply.status(201).send({ data: result });
         } catch (err) {
@@ -272,8 +273,9 @@ export async function githubRoutes(app: FastifyInstance) {
         const { projectId } = request.params as { projectId: string };
 
         try {
-          await consumeQuota(userId, "github_export", projectId);
+          // requireQuota already asserted; charge only on success.
           const result = await githubService.exportProject(projectId, userId);
+          await consumeQuota(userId, "github_export", projectId);
           await githubTrackingService.recordCreated(projectId, userId);
           return reply.status(201).send({ data: result });
         } catch (err) {

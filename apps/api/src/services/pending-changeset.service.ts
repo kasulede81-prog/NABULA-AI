@@ -117,6 +117,10 @@ export class PendingChangesetService {
   }
 
   async apply(projectId: string, userId: string, paths?: string[]) {
+    // An explicit empty selection is a no-op, NOT "apply everything".
+    if (paths && paths.length === 0) {
+      return { applied: 0, paths: [] as string[] };
+    }
     let proposal = await this.getProposal(projectId);
     if (paths && paths.length > 0) {
       const wanted = new Set(paths);
@@ -146,6 +150,18 @@ export class PendingChangesetService {
       paths: result.written,
     });
 
+    // Partial apply: re-announce what's still pending so clients don't
+    // treat CHANGESET_APPLIED as "everything resolved".
+    if (paths && paths.length > 0) {
+      const remaining = await this.getProposal(projectId);
+      if (remaining.length > 0) {
+        eventService.publish(projectId, SseEvents.CHANGESET_PROPOSED, {
+          fileCount: remaining.length,
+          files: remaining,
+        });
+      }
+    }
+
     void autoPreviewService
       .scheduleAfterBuild(projectId, userId, "changeset_applied")
       .catch(() => undefined);
@@ -154,6 +170,10 @@ export class PendingChangesetService {
   }
 
   async discard(projectId: string, paths?: string[]) {
+    // An explicit empty selection is a no-op, NOT "discard everything".
+    if (paths && paths.length === 0) {
+      return { discarded: 0 };
+    }
     const where =
       paths && paths.length > 0
         ? { projectId, path: { in: paths } }
@@ -170,11 +190,11 @@ export class PendingChangesetService {
 
   /** Replace staged content for a path (per-hunk partial accept). */
   async updateStaged(projectId: string, path: string, content: string) {
-    await prisma.pendingChangesetEntry.update({
-      where: { projectId_path: { projectId, path } },
+    const { count } = await prisma.pendingChangesetEntry.updateMany({
+      where: { projectId, path },
       data: { content },
     });
-    return { path };
+    return { path, updated: count > 0 };
   }
 
   async clear(projectId: string) {

@@ -11,9 +11,9 @@ export class ProjectLock {
     return `lock:${this.label}:${projectId}`;
   }
 
-  tryAcquire(projectId: string): void {
-    if (this.active.has(projectId)) {
-      throw new AgentError(
+  async tryAcquire(projectId: string): Promise<void> {
+    const inProgressError = () =>
+      new AgentError(
         this.label === "clarifier"
           ? NonRetryableErrorCodes.CLARIFIER_IN_PROGRESS
           : NonRetryableErrorCodes.BUILD_IN_PROGRESS,
@@ -21,13 +21,19 @@ export class ProjectLock {
         409,
         false
       );
+
+    if (this.active.has(projectId)) {
+      throw inProgressError();
     }
     this.active.add(projectId);
-    void acquireRedisLock(this.lockKey(projectId)).then((ok) => {
-      if (!ok) {
-        this.active.delete(projectId);
-      }
-    });
+
+    // Cross-instance guard — must be enforced BEFORE the run starts,
+    // otherwise two API instances can build the same project concurrently.
+    const ok = await acquireRedisLock(this.lockKey(projectId));
+    if (!ok) {
+      this.active.delete(projectId);
+      throw inProgressError();
+    }
   }
 
   release(projectId: string): void {

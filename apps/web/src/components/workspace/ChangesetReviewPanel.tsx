@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { languageForPath } from "@/lib/monaco-language";
@@ -43,6 +43,16 @@ export function ChangesetReviewPanel({
   const [rejected, setRejected] = useState<Map<string, Set<number>>>(
     new Map()
   );
+
+  // Keep in sync when the agent stages more files while the panel is open.
+  useEffect(() => {
+    setFiles(initialFiles);
+    setActivePath((prev) =>
+      initialFiles.some((f) => f.path === prev)
+        ? prev
+        : (initialFiles[0]?.path ?? "")
+    );
+  }, [initialFiles]);
 
   const active = files.find((f) => f.path === activePath) ?? files[0] ?? null;
 

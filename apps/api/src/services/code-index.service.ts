@@ -104,6 +104,10 @@ export class CodeIndexService {
     return symbols;
   }
 
+  async removeFile(projectId: string, path: string) {
+    await prisma.codeIndexEntry.deleteMany({ where: { projectId, path } });
+  }
+
   scheduleIndexFile(projectId: string, path: string, content: string) {
     setImmediate(() => {
       this.indexFile(projectId, path, content).catch((err) => {

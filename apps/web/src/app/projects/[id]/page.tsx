@@ -57,6 +57,7 @@ export default function ProjectWorkspacePage({
   const [changesetFiles, setChangesetFiles] = useState<ProposedChange[]>([]);
   const { events, connected } = useSSE(projectId);
   const fileRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const processedEventCount = useRef(0);
 
   const refreshFiles = useCallback(() => {
     setFileRefreshKey((k) => k + 1);
@@ -145,7 +146,23 @@ export default function ProjectWorkspacePage({
       try {
         const file = await api.readFile(projectId, path);
         setEditorTabs((prev) => {
-          if (prev.some((t) => t.path === path)) return prev;
+          const existing = prev.find((t) => t.path === path);
+          if (existing) {
+            // Refresh clean tabs with server content (agent writes, restore);
+            // never clobber unsaved local edits.
+            const dirty = existing.content !== existing.savedContent;
+            if (dirty || existing.savedContent === file.content) return prev;
+            return prev.map((t) =>
+              t.path === path
+                ? {
+                    ...t,
+                    content: file.content,
+                    savedContent: file.content,
+                    version: file.version,
+                  }
+                : t
+            );
+          }
           return [
             ...prev,
             {
@@ -164,48 +181,67 @@ export default function ProjectWorkspacePage({
   );
 
   useEffect(() => {
-    const last = events[events.length - 1];
-    if (!last) return;
+    // Process every new event — SSE batches often deliver several events
+    // per render, and inspecting only the last one drops the rest.
+    const newEvents = events.filter((e) => e.seq > processedEventCount.current);
+    if (newEvents.length === 0) return;
+    processedEventCount.current = newEvents[newEvents.length - 1].seq;
 
-    if (last.type === SseEvents.PROJECT_UPDATED) {
-      const status = (last.data as { status?: string }).status;
-      if (status) handleStatusChange(status);
-    }
+    let changesetCheckNeeded = false;
 
-    if (
-      last.type === SseEvents.FILE_CREATED ||
-      last.type === SseEvents.FILE_UPDATED
-    ) {
-      scheduleFileRefresh();
-      const path = (last.data as { path?: string }).path;
-      if (path) {
-        void openFile(path);
+    for (const event of newEvents) {
+      if (event.type === SseEvents.PROJECT_UPDATED) {
+        const status = (event.data as { status?: string }).status;
+        if (status) handleStatusChange(status);
+      }
+
+      if (
+        event.type === SseEvents.FILE_CREATED ||
+        event.type === SseEvents.FILE_UPDATED
+      ) {
+        scheduleFileRefresh();
+        const path = (event.data as { path?: string }).path;
+        if (path) {
+          void openFile(path);
+        }
+      }
+
+      if (event.type === SseEvents.FILE_DELETED) {
+        refreshFiles();
+        const path = (event.data as { path?: string }).path;
+        if (path) {
+          setEditorTabs((prev) => prev.filter((t) => t.path !== path));
+          if (selectedPath === path) setSelectedPath(null);
+        }
+      }
+
+      if (event.type === SseEvents.CHANGESET_PROPOSED) {
+        const files = (event.data as { files?: ProposedChange[] }).files ?? [];
+        if (files.length > 0) {
+          setChangesetFiles(files);
+          setChangesetOpen(true);
+        }
+      }
+
+      if (
+        event.type === SseEvents.CHANGESET_APPLIED ||
+        event.type === SseEvents.CHANGESET_DISCARDED
+      ) {
+        changesetCheckNeeded = true;
       }
     }
 
-    if (last.type === SseEvents.FILE_DELETED) {
-      refreshFiles();
-      const path = (last.data as { path?: string }).path;
-      if (path) {
-        setEditorTabs((prev) => prev.filter((t) => t.path !== path));
-        if (selectedPath === path) setSelectedPath(null);
-      }
-    }
-
-    if (last.type === SseEvents.CHANGESET_PROPOSED) {
-      const files = (last.data as { files?: ProposedChange[] }).files ?? [];
-      if (files.length > 0) {
-        setChangesetFiles(files);
-        setChangesetOpen(true);
-      }
-    }
-
-    if (
-      last.type === SseEvents.CHANGESET_APPLIED ||
-      last.type === SseEvents.CHANGESET_DISCARDED
-    ) {
-      setChangesetOpen(false);
-      setChangesetFiles([]);
+    if (changesetCheckNeeded) {
+      // Per-file apply/discard also emits these events — re-check the
+      // server instead of assuming the whole changeset is resolved.
+      void api.getChangeset(projectId).then((res) => {
+        if (res.pending && res.files.length > 0) {
+          setChangesetFiles(res.files);
+        } else {
+          setChangesetOpen(false);
+          setChangesetFiles([]);
+        }
+      });
       refreshFiles();
     }
   }, [
@@ -215,6 +251,7 @@ export default function ProjectWorkspacePage({
     handleStatusChange,
     openFile,
     selectedPath,
+    projectId,
   ]);
 
   const projectName = projectLoading && !project ? "Loading…" : (project?.name ?? "Project");

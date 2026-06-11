@@ -67,7 +67,14 @@ class EventService {
   subscribe(projectId: string, listener: ProjectListener): () => void {
     const emitter = this.getEmitter(projectId);
     emitter.on("event", listener);
-    return () => emitter.off("event", listener);
+    return () => {
+      emitter.off("event", listener);
+      // Prune idle emitters so the map doesn't grow unboundedly with
+      // every project ever touched by this process.
+      if (emitter.listenerCount("event") === 0) {
+        this.emitters.delete(projectId);
+      }
+    };
   }
 
   unsubscribeAll(projectId: string): void {

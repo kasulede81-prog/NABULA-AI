@@ -8,17 +8,24 @@ export interface SseMessage {
   type: SseEventType;
   data: Record<string, unknown>;
   timestamp: string;
+  /** Monotonic sequence number — survives the ring-buffer cap and project switches. */
+  seq: number;
 }
 
 export function useSSE(projectId: string | null) {
   const [events, setEvents] = useState<SseMessage[]>([]);
   const [connected, setConnected] = useState(false);
   const sourceRef = useRef<EventSource | null>(null);
+  // Never reset — consumers track "last processed seq" safely across
+  // project switches and the 100-event ring buffer cap.
+  const seqRef = useRef(0);
 
   const clearEvents = useCallback(() => setEvents([]), []);
 
   useEffect(() => {
     if (!projectId) return;
+    // Drop events from the previous project.
+    setEvents([]);
 
     const apiBase =
       process.env.NEXT_PUBLIC_API_URL ??
@@ -71,8 +78,9 @@ export function useSSE(projectId: string | null) {
 
             if (data) {
               try {
-                const parsed = JSON.parse(data) as SseMessage;
-                setEvents((prev) => [...prev.slice(-99), parsed]);
+                const parsed = JSON.parse(data) as Omit<SseMessage, "seq">;
+                const message: SseMessage = { ...parsed, seq: ++seqRef.current };
+                setEvents((prev) => [...prev.slice(-99), message]);
               } catch {
                 // ignore malformed
               }

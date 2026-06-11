@@ -139,17 +139,20 @@ export class FileHistoryService {
         select: { path: true, createdAt: true },
       }),
       // Archived rows created after T hold the content that was active at T
-      // (a row is archived at the moment it gets overwritten).
+      // (a row is archived at the moment it gets overwritten/deleted).
+      // Order by archive time: the EARLIEST archive after T per path is
+      // exactly what was live at T — version numbers can reset when a file
+      // is deleted and recreated, so they are not a reliable ordering.
       prisma.fileVersion.findMany({
         where: { projectId, createdAt: { gt: at } },
-        orderBy: [{ path: "asc" }, { version: "asc" }],
+        orderBy: [{ path: "asc" }, { createdAt: "asc" }],
         select: { path: true, version: true, content: true },
       }),
     ]);
 
     const restoreContent = new Map<string, string>();
     for (const row of archivedAfter) {
-      // First (lowest version) archived-after-T row per path = state at T.
+      // First (earliest archived-after-T) row per path = state at T.
       if (!restoreContent.has(row.path)) {
         restoreContent.set(row.path, row.content);
       }
@@ -157,6 +160,7 @@ export class FileHistoryService {
 
     const writes: Array<{ path: string; content: string }> = [];
     const deletes: string[] = [];
+    const currentPaths = new Set(currentFiles.map((f) => f.path));
 
     for (const file of currentFiles) {
       const restored = restoreContent.get(file.path);
@@ -165,6 +169,14 @@ export class FileHistoryService {
       } else if (file.createdAt > at) {
         // File did not exist at T and has no pre-T history → remove it.
         deletes.push(file.path);
+      }
+    }
+
+    // Resurrect files that existed at T but were deleted afterwards
+    // (deleteFile archives content before removal).
+    for (const [path, content] of restoreContent) {
+      if (!currentPaths.has(path)) {
+        writes.push({ path, content });
       }
     }
 

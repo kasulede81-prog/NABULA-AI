@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function AuthCallbackPage() {
   const router = useRouter();
+  const { refresh } = useAuth();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -19,14 +21,20 @@ export default function AuthCallbackPage() {
 
     void api
       .exchangeSupabaseToken(accessToken)
-      .then(() => router.replace("/onboarding"))
+      .then(async (result) => {
+        // Persist the session like email login does — without this the
+        // AuthProvider never sees the user and onboarding bounces to /login.
+        api.setToken(result.token);
+        await refresh();
+        router.replace("/onboarding");
+      })
       .catch((err) => {
         setError(
           (err as { error?: { message?: string } }).error?.message ??
             "OAuth sign-in failed"
         );
       });
-  }, [router]);
+  }, [router, refresh]);
 
   return (
     <div className="grid min-h-screen place-items-center px-4 text-center">

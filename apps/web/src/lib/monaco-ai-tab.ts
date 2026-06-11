@@ -27,8 +27,22 @@ export function registerAiTabCompletions(
   getRecentEdits?: () => string
 ): () => void {
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  // Resolver of the in-flight debounced request; must be settled when
+  // superseded, otherwise Monaco awaits the stale promise forever.
+  let pendingResolve: ((value: string) => void) | null = null;
   let lastResult: { key: string; completion: string } | null = null;
   let disabled = false;
+
+  const cancelPending = () => {
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+    if (pendingResolve) {
+      pendingResolve("");
+      pendingResolve = null;
+    }
+  };
 
   const provider: MonacoEditor.languages.InlineCompletionsProvider = {
     provideInlineCompletions: async (model, position, _context, token) => {
@@ -58,10 +72,16 @@ export function registerAiTabCompletions(
       }
 
       // Debounce: wait for typing to pause before hitting the API.
+      // Settle any superseded request first so its promise never dangles.
       const completion = await new Promise<string>((resolve) => {
-        if (debounceTimer) clearTimeout(debounceTimer);
+        cancelPending();
+        pendingResolve = resolve;
         debounceTimer = setTimeout(async () => {
-          if (token.isCancellationRequested) return resolve("");
+          debounceTimer = null;
+          if (token.isCancellationRequested) {
+            if (pendingResolve === resolve) pendingResolve = null;
+            return resolve("");
+          }
           try {
             const res = await api.tabCompletion(projectId, {
               path,
@@ -75,6 +95,8 @@ export function registerAiTabCompletions(
             // Feature not configured server-side; stop asking this session.
             disabled = true;
             resolve("");
+          } finally {
+            if (pendingResolve === resolve) pendingResolve = null;
           }
         }, DEBOUNCE_MS);
       });
@@ -91,7 +113,7 @@ export function registerAiTabCompletions(
   );
 
   return () => {
-    if (debounceTimer) clearTimeout(debounceTimer);
+    cancelPending();
     for (const d of disposables) d.dispose();
   };
 }

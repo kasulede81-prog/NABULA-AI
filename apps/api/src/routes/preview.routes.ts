@@ -43,8 +43,10 @@ export async function previewRoutes(app: FastifyInstance) {
     }
 
     try {
-      await consumeQuota(userId, "preview_launch", projectId);
+      // requireQuota already asserted; charge only once the launch is
+      // actually accepted (validation failures must not consume credits).
       const result = await previewService.create(projectId, userId);
+      await consumeQuota(userId, "preview_launch", projectId);
       return reply.status(202).send({
         status: result.status,
         previewId: result.previewId,
@@ -117,8 +119,10 @@ export async function previewRoutes(app: FastifyInstance) {
     const { projectId } = request.params as { projectId: string };
 
     try {
-      await consumeQuota(userId, "preview_launch", projectId);
+      // requireQuota already asserted; charge only once the launch is
+      // actually accepted (validation failures must not consume credits).
       const result = await previewService.create(projectId, userId);
+      await consumeQuota(userId, "preview_launch", projectId);
       return reply.status(202).send({
         status: result.status,
         previewId: result.previewId,

@@ -64,30 +64,39 @@ export class SupabaseAuthService {
         `oauth-${data.id ?? email}-${Date.now()}`
       );
       const initialCredits = PLAN_LIMITS.free.monthlyCredits ?? 100;
-      user = await prisma.user.create({
-        data: {
-          email,
-          passwordHash,
-          name,
-          subscription: {
-            create: {
-              plan: "free",
-              buildsLimit: PLAN_LIMITS.free.dailyAiRequests ?? 20,
-              creditsBalance: initialCredits,
-              renewsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      try {
+        user = await prisma.user.create({
+          data: {
+            email,
+            passwordHash,
+            name,
+            subscription: {
+              create: {
+                plan: "free",
+                buildsLimit: PLAN_LIMITS.free.dailyAiRequests ?? 20,
+                creditsBalance: initialCredits,
+                renewsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+              },
             },
           },
-        },
-      });
-      await prisma.creditLedger.create({
-        data: {
-          userId: user.id,
-          type: "monthly_grant",
-          amount: initialCredits,
-          balanceAfter: initialCredits,
-          metadata: { reason: "oauth_signup" },
-        },
-      });
+        });
+        await prisma.creditLedger.create({
+          data: {
+            userId: user.id,
+            type: "monthly_grant",
+            amount: initialCredits,
+            balanceAfter: initialCredits,
+            metadata: { reason: "oauth_signup" },
+          },
+        });
+      } catch (err) {
+        // Concurrent first logins race on the unique email (P2002) —
+        // the other request created the user, so just load it.
+        const code = (err as { code?: string }).code;
+        if (code !== "P2002") throw err;
+        user = await prisma.user.findUnique({ where: { email } });
+        if (!user) throw err;
+      }
     }
 
     await billingService.getSnapshot(user.id);

@@ -48,6 +48,8 @@ export function WorkspaceNotifications({
       const res = await api.listProjectNotifications(projectId);
       setItems(res.data);
       setUnread(res.unread);
+    } catch {
+      /* keep current list; reopening the bell retries */
     } finally {
       setLoading(false);
     }
@@ -58,9 +60,11 @@ export function WorkspaceNotifications({
   }, [load]);
 
   useEffect(() => {
-    if (sseEvents.length <= lastEventCount.current) return;
-    const newEvents = sseEvents.slice(lastEventCount.current);
-    lastEventCount.current = sseEvents.length;
+    // Filter by monotonic seq — array length stalls at the ring-buffer cap
+    // and resets on project switch, so index tracking would stop working.
+    const newEvents = sseEvents.filter((e) => e.seq > lastEventCount.current);
+    if (newEvents.length === 0) return;
+    lastEventCount.current = newEvents[newEvents.length - 1].seq;
 
     for (const event of newEvents) {
       if (event.type === SseEvents.NOTIFICATION_CREATED) {

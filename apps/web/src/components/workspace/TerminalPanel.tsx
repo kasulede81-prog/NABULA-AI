@@ -16,6 +16,11 @@ export function TerminalPanel({ projectId, sseEvents }: TerminalPanelProps) {
   const termRef = useRef<import("xterm").Terminal | null>(null);
   const fitRef = useRef<import("@xterm/addon-fit").FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const resizeCleanupRef = useRef<(() => void) | null>(null);
+  const lastSeqRef = useRef(0);
+  // Incremented on each connect/disconnect — lets an in-flight connect
+  // detect it has been superseded and abandon its work.
+  const connectGenRef = useRef(0);
   const [status, setStatus] = useState<"idle" | "connecting" | "ready" | "error">(
     "idle"
   );
@@ -57,6 +62,9 @@ export function TerminalPanel({ projectId, sseEvents }: TerminalPanelProps) {
   }, [projectId]);
 
   const disconnect = useCallback(() => {
+    connectGenRef.current += 1;
+    resizeCleanupRef.current?.();
+    resizeCleanupRef.current = null;
     wsRef.current?.close();
     wsRef.current = null;
     termRef.current?.dispose();
@@ -67,10 +75,12 @@ export function TerminalPanel({ projectId, sseEvents }: TerminalPanelProps) {
 
   const connect = useCallback(async () => {
     disconnect();
+    const gen = connectGenRef.current;
     setError(null);
     setStatus("connecting");
 
     const ready = await checkPreview();
+    if (gen !== connectGenRef.current) return; // superseded mid-connect
     if (!ready) {
       setStatus("error");
       setError("Start a preview first — the terminal runs inside the preview sandbox.");
@@ -79,6 +89,7 @@ export function TerminalPanel({ projectId, sseEvents }: TerminalPanelProps) {
 
     const { Terminal } = await import("xterm");
     const { FitAddon } = await import("@xterm/addon-fit");
+    if (gen !== connectGenRef.current) return; // superseded mid-connect
     if (!document.querySelector('link[data-xterm-css="1"]')) {
       const link = document.createElement("link");
       link.rel = "stylesheet";
@@ -175,8 +186,9 @@ export function TerminalPanel({ projectId, sseEvents }: TerminalPanelProps) {
       }
     };
     window.addEventListener("resize", onResize);
-
-    return () => window.removeEventListener("resize", onResize);
+    // Removed by disconnect() — reconnects must not stack listeners.
+    resizeCleanupRef.current = () =>
+      window.removeEventListener("resize", onResize);
   }, [checkPreview, disconnect, projectId]);
 
   useEffect(() => {
@@ -184,22 +196,32 @@ export function TerminalPanel({ projectId, sseEvents }: TerminalPanelProps) {
   }, [checkPreview]);
 
   useEffect(() => {
-    const last = sseEvents[sseEvents.length - 1];
-    if (!last) return;
-    if (
-      last.type === SseEvents.PREVIEW_READY ||
-      last.type === SseEvents.PREVIEW_DELETED ||
-      last.type === SseEvents.PREVIEW_EXPIRED ||
-      last.type === SseEvents.PREVIEW_FAILED
-    ) {
-      void checkPreview();
+    // Process every new preview event — batches can carry e.g. READY then
+    // DELETED together; inspecting only the last would miss teardowns.
+    const newEvents = sseEvents.filter((e) => e.seq > lastSeqRef.current);
+    if (newEvents.length === 0) return;
+    lastSeqRef.current = newEvents[newEvents.length - 1].seq;
+
+    let refresh = false;
+    let teardown = false;
+    for (const event of newEvents) {
       if (
-        last.type === SseEvents.PREVIEW_DELETED ||
-        last.type === SseEvents.PREVIEW_EXPIRED
+        event.type === SseEvents.PREVIEW_READY ||
+        event.type === SseEvents.PREVIEW_DELETED ||
+        event.type === SseEvents.PREVIEW_EXPIRED ||
+        event.type === SseEvents.PREVIEW_FAILED
       ) {
-        disconnect();
+        refresh = true;
+        if (
+          event.type === SseEvents.PREVIEW_DELETED ||
+          event.type === SseEvents.PREVIEW_EXPIRED
+        ) {
+          teardown = true;
+        }
       }
     }
+    if (refresh) void checkPreview();
+    if (teardown) disconnect();
   }, [sseEvents, checkPreview, disconnect]);
 
   useEffect(() => () => disconnect(), [disconnect]);

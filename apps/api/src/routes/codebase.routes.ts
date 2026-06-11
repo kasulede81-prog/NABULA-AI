@@ -92,10 +92,12 @@ export async function codebaseRoutes(app: FastifyInstance) {
     }
   });
 
-  app.get("/projects/:projectId/files/*/history", async (request, reply) => {
+  // NOTE: Fastify only allows trailing wildcards — "/files/*/history" would
+  // crash route registration, so the path travels as a query parameter.
+  app.get("/projects/:projectId/file-history", async (request, reply) => {
     const { userId } = request as AuthenticatedRequest;
     const { projectId } = request.params as { projectId: string };
-    const filePath = (request.params as { "*": string })["*"];
+    const { path: filePath } = request.query as { path?: string };
 
     if (!filePath) {
       return reply.status(400).send({
@@ -146,11 +148,12 @@ export async function codebaseRoutes(app: FastifyInstance) {
     }
   });
 
-  app.post("/projects/:projectId/files/*/restore", async (request, reply) => {
+  // NOTE: same trailing-wildcard constraint — path comes in the body.
+  app.post("/projects/:projectId/files/restore-version", async (request, reply) => {
     const { userId } = request as AuthenticatedRequest;
     const { projectId } = request.params as { projectId: string };
-    const filePath = (request.params as { "*": string })["*"];
-    const body = request.body as { version?: number };
+    const body = (request.body ?? {}) as { path?: string; version?: number };
+    const filePath = body.path;
 
     if (!filePath || body.version == null) {
       return reply.status(400).send({

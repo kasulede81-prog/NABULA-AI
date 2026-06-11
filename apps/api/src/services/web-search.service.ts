@@ -1,13 +1,11 @@
 import { env } from "../config/env";
+import { isPrivateHostname, resolvesToPrivate } from "../lib/ssrf-guard";
 
 export interface WebSearchResult {
   title: string;
   url: string;
   snippet: string;
 }
-
-const PRIVATE_HOST_RE =
-  /^(localhost|127\.|0\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)|\.(local|internal)$/i;
 
 export class WebSearchService {
   isConfigured(): boolean {
@@ -46,39 +44,54 @@ export class WebSearchService {
 
   /** Fetch a docs URL as plain text (for @docs:url mentions). */
   async fetchDocs(url: string): Promise<string | null> {
-    let parsed: URL;
-    try {
-      parsed = new URL(url);
-    } catch {
-      return null;
-    }
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-      return null;
-    }
-    if (
-      PRIVATE_HOST_RE.test(parsed.hostname) ||
-      /^\d+\.\d+\.\d+\.\d+$/.test(parsed.hostname)
-    ) {
-      return null;
-    }
+    // Follow redirects manually so every hop is SSRF-validated — a public
+    // URL must not be able to 302 into the internal network.
+    let current = url;
+    for (let hop = 0; hop < 4; hop++) {
+      let parsed: URL;
+      try {
+        parsed = new URL(current);
+      } catch {
+        return null;
+      }
+      if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+        return null;
+      }
+      const hostname = parsed.hostname.replace(/^\[|\]$/g, "");
+      if (
+        isPrivateHostname(hostname) ||
+        (await resolvesToPrivate(hostname))
+      ) {
+        return null;
+      }
 
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 8000);
-      const res = await fetch(parsed.toString(), {
-        signal: controller.signal,
-        headers: { "User-Agent": "NebulaDocsBot/1.0" },
-        redirect: "follow",
-      });
-      clearTimeout(timer);
-      if (!res.ok) return null;
-      const contentType = res.headers.get("content-type") ?? "";
-      if (!/text|html|json|markdown/i.test(contentType)) return null;
-      const raw = (await res.text()).slice(0, 200_000);
-      return htmlToText(raw).slice(0, 6000);
-    } catch {
-      return null;
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 8000);
+        const res = await fetch(parsed.toString(), {
+          signal: controller.signal,
+          headers: { "User-Agent": "NebulaDocsBot/1.0" },
+          redirect: "manual",
+        });
+        clearTimeout(timer);
+
+        if (res.status >= 300 && res.status < 400) {
+          const location = res.headers.get("location");
+          if (!location) return null;
+          current = new URL(location, parsed).toString();
+          continue;
+        }
+
+        if (!res.ok) return null;
+        const contentType = res.headers.get("content-type") ?? "";
+        if (!/text|html|json|markdown/i.test(contentType)) return null;
+        const raw = (await res.text()).slice(0, 200_000);
+        return htmlToText(raw).slice(0, 6000);
+      } catch {
+        return null;
+      }
     }
+    return null; // too many redirects
   }
 }
 

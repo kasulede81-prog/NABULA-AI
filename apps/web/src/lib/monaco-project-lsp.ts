@@ -27,11 +27,11 @@ export function fileUri(monaco: Monaco, path: string): MonacoEditor.Uri {
  * - Enables live type errors (with node_modules noise suppressed).
  * - Routes cross-file go-to-definition into the workspace tab system.
  */
-export async function setupProjectIntelligence(
+export function setupProjectIntelligence(
   monaco: Monaco,
   projectId: string,
   onOpenFile: (path: string, line?: number, column?: number) => void
-): Promise<() => void> {
+): () => void {
   const ts = monaco.languages.typescript;
 
   const compilerOptions = {
@@ -66,43 +66,51 @@ export async function setupProjectIntelligence(
   ts.javascriptDefaults.setEagerModelSync(true);
 
   const createdModels: MonacoEditor.editor.ITextModel[] = [];
+  let disposed = false;
 
-  try {
-    const list = await api.listFiles(projectId);
-    const codePaths = list.data
-      .map((f) => f.path)
-      .filter((p) => CODE_EXTENSIONS.test(p))
-      .slice(0, MAX_PROJECT_FILES);
+  // Load models in the background; dispose() can be called at any point
+  // and must stop the loop so post-dispose models are never leaked.
+  void (async () => {
+    try {
+      const list = await api.listFiles(projectId);
+      if (disposed) return;
+      const codePaths = list.data
+        .map((f) => f.path)
+        .filter((p) => CODE_EXTENSIONS.test(p))
+        .slice(0, MAX_PROJECT_FILES);
 
-    // Read in small batches to avoid hammering the API.
-    const BATCH = 12;
-    for (let i = 0; i < codePaths.length; i += BATCH) {
-      const batch = codePaths.slice(i, i + BATCH);
-      const files = await Promise.all(
-        batch.map(async (path) => {
-          try {
-            const file = await api.readFile(projectId, path);
-            return { path, content: file.content };
-          } catch {
-            return null;
-          }
-        })
-      );
-      for (const file of files) {
-        if (!file) continue;
-        const uri = fileUri(monaco, file.path);
-        if (monaco.editor.getModel(uri)) continue;
-        const model = monaco.editor.createModel(
-          file.content,
-          undefined,
-          uri
+      // Read in small batches to avoid hammering the API.
+      const BATCH = 12;
+      for (let i = 0; i < codePaths.length; i += BATCH) {
+        if (disposed) return;
+        const batch = codePaths.slice(i, i + BATCH);
+        const files = await Promise.all(
+          batch.map(async (path) => {
+            try {
+              const file = await api.readFile(projectId, path);
+              return { path, content: file.content };
+            } catch {
+              return null;
+            }
+          })
         );
-        createdModels.push(model);
+        if (disposed) return;
+        for (const file of files) {
+          if (!file) continue;
+          const uri = fileUri(monaco, file.path);
+          if (monaco.editor.getModel(uri)) continue;
+          const model = monaco.editor.createModel(
+            file.content,
+            undefined,
+            uri
+          );
+          createdModels.push(model);
+        }
       }
+    } catch {
+      /* project intelligence is best-effort */
     }
-  } catch {
-    /* project intelligence is best-effort */
-  }
+  })();
 
   // Cross-file go-to-definition: open the target file in our tab system.
   const opener = monaco.editor.registerEditorOpener({
@@ -111,7 +119,13 @@ export async function setupProjectIntelligence(
       resource: MonacoEditor.Uri,
       selectionOrPosition?: MonacoEditor.IRange | MonacoEditor.IPosition
     ) => {
-      const path = resource.path.replace(/^\//, "");
+      let path = resource.path.replace(/^\//, "");
+      try {
+        // Uri.path percent-encodes characters like [ ] in Next.js routes.
+        path = decodeURIComponent(path);
+      } catch {
+        /* keep raw path */
+      }
       if (!path) return false;
       let line: number | undefined;
       let column: number | undefined;
@@ -130,6 +144,7 @@ export async function setupProjectIntelligence(
   });
 
   return () => {
+    disposed = true;
     opener.dispose();
     for (const model of createdModels) {
       if (!model.isDisposed()) model.dispose();

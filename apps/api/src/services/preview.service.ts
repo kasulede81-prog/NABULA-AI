@@ -262,11 +262,18 @@ export class PreviewService {
       );
     }
 
+    // Upsert the row BEFORE scheduling — start() runs asynchronously, so
+    // reading after scheduleStart() races it and can return an empty id.
+    const preview = await prisma.preview.upsert({
+      where: { projectId },
+      create: { projectId, status: "starting" },
+      update: { status: "starting", errorCode: null, errorMessage: null },
+    });
+
     this.scheduleStart(projectId, userId);
 
-    const preview = await prisma.preview.findUnique({ where: { projectId } });
     return {
-      previewId: preview?.id ?? "",
+      previewId: preview.id,
       status: "accepted",
     };
   }

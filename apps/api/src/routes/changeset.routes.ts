@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { vfsPathSchema } from "@nebula/shared";
 import { authenticate, type AuthenticatedRequest } from "../middleware/auth";
 import { pendingChangesetService } from "../services/pending-changeset.service";
 import { projectService, ProjectError } from "../services/project.service";
@@ -60,11 +61,12 @@ export async function changesetRoutes(app: FastifyInstance) {
       content?: string;
     };
 
-    if (!path || typeof content !== "string") {
+    const pathParsed = vfsPathSchema.safeParse(path);
+    if (!pathParsed.success || typeof content !== "string") {
       return reply.status(400).send({
         error: {
           code: "VALIDATION_ERROR",
-          message: "path and content are required",
+          message: "valid path and content are required",
         },
       });
     }
@@ -74,7 +76,7 @@ export async function changesetRoutes(app: FastifyInstance) {
       const result = await pendingChangesetService.stageWrites(
         projectId,
         userId,
-        [{ path, content }]
+        [{ path: pathParsed.data, content }]
       );
       return reply.send(result);
     } catch (err) {
@@ -95,11 +97,12 @@ export async function changesetRoutes(app: FastifyInstance) {
       content?: string;
     };
 
-    if (!path || typeof content !== "string") {
+    const pathParsed = vfsPathSchema.safeParse(path);
+    if (!pathParsed.success || typeof content !== "string") {
       return reply.status(400).send({
         error: {
           code: "VALIDATION_ERROR",
-          message: "path and content are required",
+          message: "valid path and content are required",
         },
       });
     }
@@ -108,7 +111,7 @@ export async function changesetRoutes(app: FastifyInstance) {
       await projectService.get(projectId, userId);
       const result = await pendingChangesetService.updateStaged(
         projectId,
-        path,
+        pathParsed.data,
         content
       );
       return reply.send(result);
