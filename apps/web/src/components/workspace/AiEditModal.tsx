@@ -103,12 +103,13 @@ export function AiEditModal({
         )}
 
         {modifiedContent != null && (
-          <div className="min-h-[320px] flex-1 overflow-hidden">
+          <div className="overflow-hidden">
             <div className="grid grid-cols-2 border-b border-surface-border text-center text-xs text-gray-500">
               <span className="py-1">Original</span>
               <span className="py-1">Updated</span>
             </div>
-            <div className="h-[360px]">
+            {/* Viewport-capped so the footer buttons stay visible on short screens. */}
+            <div className="h-[min(360px,45vh)]">
               <DiffEditor
                 original={originalContent}
                 modified={modifiedContent}

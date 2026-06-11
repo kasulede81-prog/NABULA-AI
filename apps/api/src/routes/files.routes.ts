@@ -57,6 +57,32 @@ export async function fileRoutes(app: FastifyInstance) {
     }
   });
 
+  app.post("/projects/:projectId/files/bulk-read", async (request, reply) => {
+    const { userId } = request as AuthenticatedRequest;
+    const { projectId } = request.params as { projectId: string };
+    const body = request.body as { paths?: unknown };
+    const paths = Array.isArray(body?.paths)
+      ? body.paths.filter((p): p is string => typeof p === "string").slice(0, 500)
+      : null;
+    if (!paths) {
+      return reply.status(400).send({
+        error: { code: "VALIDATION_ERROR", message: "paths array required" },
+      });
+    }
+
+    try {
+      const data = await vfsService.readFilesBulk(projectId, userId, paths);
+      return reply.send({ data });
+    } catch (err) {
+      if (err instanceof ProjectError) {
+        return reply.status(err.status).send({
+          error: { code: err.code, message: err.message },
+        });
+      }
+      throw err;
+    }
+  });
+
   app.get("/projects/:projectId/files/*", async (request, reply) => {
     const { userId } = request as AuthenticatedRequest;
     const { projectId } = request.params as { projectId: string; "*": string };
@@ -77,12 +103,12 @@ export async function fileRoutes(app: FastifyInstance) {
         filePath,
         Number.isFinite(versionNum) ? versionNum : undefined
       );
-      await analyticsService.track(
-        WorkspaceMetricEvents.FILES_OPENED,
-        userId,
-        projectId,
-        { path: filePath }
-      );
+      // Fire-and-forget: analytics must not add a DB roundtrip to file reads.
+      void analyticsService
+        .track(WorkspaceMetricEvents.FILES_OPENED, userId, projectId, {
+          path: filePath,
+        })
+        .catch(() => undefined);
       return reply.send(file);
     } catch (err) {
       if (err instanceof ProjectError) {

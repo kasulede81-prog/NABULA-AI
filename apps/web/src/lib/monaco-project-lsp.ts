@@ -79,33 +79,14 @@ export function setupProjectIntelligence(
         .filter((p) => CODE_EXTENSIONS.test(p))
         .slice(0, MAX_PROJECT_FILES);
 
-      // Read in small batches to avoid hammering the API.
-      const BATCH = 12;
-      for (let i = 0; i < codePaths.length; i += BATCH) {
-        if (disposed) return;
-        const batch = codePaths.slice(i, i + BATCH);
-        const files = await Promise.all(
-          batch.map(async (path) => {
-            try {
-              const file = await api.readFile(projectId, path);
-              return { path, content: file.content };
-            } catch {
-              return null;
-            }
-          })
-        );
-        if (disposed) return;
-        for (const file of files) {
-          if (!file) continue;
-          const uri = fileUri(monaco, file.path);
-          if (monaco.editor.getModel(uri)) continue;
-          const model = monaco.editor.createModel(
-            file.content,
-            undefined,
-            uri
-          );
-          createdModels.push(model);
-        }
+      // Single bulk request instead of one readFile call per file.
+      const { data: files } = await api.bulkReadFiles(projectId, codePaths);
+      if (disposed) return;
+      for (const file of files) {
+        const uri = fileUri(monaco, file.path);
+        if (monaco.editor.getModel(uri)) continue;
+        const model = monaco.editor.createModel(file.content, undefined, uri);
+        createdModels.push(model);
       }
     } catch {
       /* project intelligence is best-effort */

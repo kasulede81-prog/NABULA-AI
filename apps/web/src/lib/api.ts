@@ -921,18 +921,42 @@ export class ApiClient {
     });
   }
 
-  async listFiles(projectId: string) {
-    const data = await this.fetchAllCursorPages<{
+  // Several workspace components list files on mount; share one in-flight
+  // request per project instead of firing 3-4 identical paginated fetches.
+  private listFilesInFlight = new Map<
+    string,
+    Promise<{ data: Array<{ path: string; version: number; createdAt: string }> }>
+  >();
+
+  listFiles(projectId: string) {
+    const existing = this.listFilesInFlight.get(projectId);
+    if (existing) return existing;
+
+    const promise = this.fetchAllCursorPages<{
       path: string;
       version: number;
       createdAt: string;
     }>((cursor) => {
-      const suffix = cursor
-        ? `?cursor=${encodeURIComponent(cursor)}`
-        : "";
-      return `/projects/${projectId}/files${suffix}`;
+      const params = new URLSearchParams({ limit: "100" });
+      if (cursor) params.set("cursor", cursor);
+      return `/projects/${projectId}/files?${params}`;
+    })
+      .then((data) => ({ data }))
+      .finally(() => {
+        this.listFilesInFlight.delete(projectId);
+      });
+    this.listFilesInFlight.set(projectId, promise);
+    return promise;
+  }
+
+  /** Bulk file read for LSP preloading — one request instead of N. */
+  bulkReadFiles(projectId: string, paths: string[]) {
+    return this.request<{
+      data: Array<{ path: string; content: string; version: number }>;
+    }>(`/projects/${projectId}/files/bulk-read`, {
+      method: "POST",
+      body: JSON.stringify({ paths }),
     });
-    return { data };
   }
 
   readFile(projectId: string, path: string, version?: number) {

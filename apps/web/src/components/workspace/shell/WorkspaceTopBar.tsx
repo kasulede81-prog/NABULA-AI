@@ -61,10 +61,12 @@ export function WorkspaceTopBar({
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur">
-      <div className="flex items-center gap-2 text-sm">
-        <span className="text-muted-foreground">{contextSlug}</span>
-        <span className="text-muted-foreground/50">/</span>
-        <span className="font-medium">{projectName}</span>
+      <div className="flex min-w-0 items-center gap-2 text-sm">
+        <span className="hidden shrink-0 text-muted-foreground md:inline">
+          {contextSlug}
+        </span>
+        <span className="hidden text-muted-foreground/50 md:inline">/</span>
+        <span className="min-w-0 truncate font-medium">{projectName}</span>
         <span
           className={`ml-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
             projectStatus === "ready"
@@ -86,7 +88,7 @@ export function WorkspaceTopBar({
         </button>
       </div>
 
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex shrink-0 items-center gap-2">
         <WorkspaceNotifications projectId={projectId} sseEvents={sseEvents} />
         <ShadcnButton
           variant="outline"

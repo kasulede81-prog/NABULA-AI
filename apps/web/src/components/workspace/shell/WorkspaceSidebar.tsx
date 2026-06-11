@@ -99,6 +99,8 @@ export function WorkspaceSidebar({
         </Link>
       </div>
 
+      {/* Scrollable middle so the footer stays reachable on short screens. */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto scrollbar-thin">
       {!collapsed && (
         <div className="relative px-3 pt-3">
           <button
@@ -207,7 +209,7 @@ export function WorkspaceSidebar({
       </nav>
 
       {!collapsed && (
-        <div className="flex flex-1 flex-col overflow-hidden px-3 pt-5">
+        <div className="flex flex-col px-3 pt-5">
           <div className="mb-2 flex items-center justify-between px-1">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               Projects
@@ -216,7 +218,7 @@ export function WorkspaceSidebar({
               {filtered.length}
             </span>
           </div>
-          <div className="scrollbar-thin space-y-0.5 overflow-y-auto pr-1">
+          <div className="space-y-0.5 pr-1">
             {projectsLoading && (
               <p className="px-2 py-3 text-[11px] text-muted-foreground">
                 Loading…
@@ -262,8 +264,9 @@ export function WorkspaceSidebar({
           </div>
         </div>
       )}
+      </div>
 
-      <div className="space-y-1 border-t border-border p-3">
+      <div className="shrink-0 space-y-1 border-t border-border p-3">
         {!collapsed && (
           <div className="mb-1 space-y-0.5">
             <Link

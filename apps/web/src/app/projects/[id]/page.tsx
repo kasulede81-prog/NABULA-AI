@@ -257,7 +257,7 @@ export default function ProjectWorkspacePage({
   const projectName = projectLoading && !project ? "Loading…" : (project?.name ?? "Project");
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
+    <div className="flex h-dvh w-full overflow-hidden bg-background text-foreground">
       <WorkspaceSidebar
         view={view}
         onView={setView}
@@ -285,15 +285,17 @@ export default function ProjectWorkspacePage({
 
         <div className="flex min-h-0 flex-1">
           {view === "agent" && (
-            <div className="w-[42%] min-w-[380px] max-w-[560px] shrink-0 border-r border-border">
-              <div className="flex h-full flex-col">
-                <ChatPanel
-                  projectId={projectId}
-                  projectStatus={projectStatus}
-                  sseEvents={events}
-                  onStatusChange={handleStatusChange}
-                />
-                <div className="max-h-[180px] shrink-0 border-t border-border">
+            <div className="w-[42%] min-w-[300px] max-w-[560px] shrink-0 border-r border-border">
+              <div className="flex h-full min-h-0 flex-col">
+                <div className="min-h-0 flex-1">
+                  <ChatPanel
+                    projectId={projectId}
+                    projectStatus={projectStatus}
+                    sseEvents={events}
+                    onStatusChange={handleStatusChange}
+                  />
+                </div>
+                <div className="max-h-[180px] shrink-0 overflow-y-auto border-t border-border">
                   <ProgressFeed events={events} connected={connected} />
                 </div>
               </div>

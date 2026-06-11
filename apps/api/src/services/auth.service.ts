@@ -1,3 +1,4 @@
+import type { Prisma } from "@nebula/database";
 import { prisma } from "../lib/prisma";
 import { hashPassword, verifyPassword } from "../lib/password";
 import { hashToken, signToken } from "../lib/jwt";
@@ -8,6 +9,16 @@ import { userActivityService } from "./stability/user-activity.service";
 import { emailService } from "./email.service";
 
 const SESSION_DAYS = 7;
+
+// Session cache: every authenticated request calls validateSession, which
+// otherwise costs a DB roundtrip (3-table join) per request. 30s staleness
+// is acceptable — logout invalidates the local cache immediately.
+const SESSION_CACHE_TTL_MS = 30_000;
+const SESSION_CACHE_MAX = 5_000;
+
+type SessionUser = Prisma.UserGetPayload<{ include: { subscription: true } }>;
+type CachedSession = { user: SessionUser; expires: number };
+const sessionCache = new Map<string, CachedSession>();
 
 export class AuthService {
   async register(input: RegisterInput) {
@@ -72,6 +83,7 @@ export class AuthService {
   }
 
   async logout(sessionId: string) {
+    sessionCache.delete(sessionId);
     await prisma.userSession.deleteMany({ where: { id: sessionId } });
   }
 
@@ -104,6 +116,11 @@ export class AuthService {
   }
 
   async validateSession(sessionId: string) {
+    const cached = sessionCache.get(sessionId);
+    if (cached && cached.expires > Date.now()) {
+      return cached.user;
+    }
+
     const session = await prisma.userSession.findUnique({
       where: { id: sessionId },
       include: {
@@ -112,6 +129,7 @@ export class AuthService {
     });
 
     if (!session || session.expiresAt < new Date()) {
+      sessionCache.delete(sessionId);
       if (session) {
         await prisma.userSession.delete({ where: { id: sessionId } });
       }
@@ -119,9 +137,18 @@ export class AuthService {
     }
 
     if (session.user.subscription?.status === "cancelled") {
+      sessionCache.delete(sessionId);
       await prisma.userSession.delete({ where: { id: sessionId } });
       return null;
     }
+
+    if (sessionCache.size >= SESSION_CACHE_MAX) {
+      sessionCache.clear();
+    }
+    sessionCache.set(sessionId, {
+      user: session.user,
+      expires: Date.now() + SESSION_CACHE_TTL_MS,
+    });
 
     return session.user;
   }

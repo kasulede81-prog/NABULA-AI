@@ -9,12 +9,15 @@ import { buildService } from "./build.service";
 import type { PipelineRunOptions } from "../types/pipeline";
 
 const WORKER_INTERVAL_MS = 2000;
+// When the queue is empty, back off to avoid hammering the DB every 2s.
+const IDLE_INTERVAL_MS = 15_000;
 const STALE_RUNNING_MS = 30 * 60 * 1000;
 
 export class AgentQueueService {
   private workerTimer: ReturnType<typeof setInterval> | null = null;
   private processing = false;
   private redisSubscribed = false;
+  private nextPollAt = 0;
 
   startWorker() {
     if (agentQueueBullmqService.isEnabled()) {
@@ -31,6 +34,7 @@ export class AgentQueueService {
       const sub = redis.duplicate();
       void sub.subscribe(RedisChannels.agentQueueTick, () => undefined);
       sub.on("message", () => {
+        this.nextPollAt = 0;
         void this.processNext();
       });
     }
@@ -93,6 +97,7 @@ export class AgentQueueService {
     });
 
     if (!bullEnqueued) {
+      this.nextPollAt = 0;
       const redis = getRedis();
       if (redis) {
         void redis
@@ -126,6 +131,7 @@ export class AgentQueueService {
   async processNext() {
     if (agentQueueBullmqService.isEnabled()) return;
     if (this.processing) return;
+    if (Date.now() < this.nextPollAt) return;
     this.processing = true;
 
     try {
@@ -148,6 +154,11 @@ export class AgentQueueService {
         orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
         take: 10,
       });
+
+      if (candidates.length === 0) {
+        this.nextPollAt = Date.now() + IDLE_INTERVAL_MS;
+        return;
+      }
 
       for (const job of candidates) {
         if (job.waitForIdle && buildService.isPipelineActive(job.projectId)) {

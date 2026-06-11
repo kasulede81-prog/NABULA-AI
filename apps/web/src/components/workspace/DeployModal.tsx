@@ -101,7 +101,7 @@ export function DeployModal({
       onClick={onClose}
     >
       <div
-        className="relative w-[480px] max-w-[92vw] overflow-hidden rounded-2xl border border-border bg-card shadow-elegant"
+        className="relative max-h-[90vh] w-[480px] max-w-[92vw] overflow-y-auto rounded-2xl border border-border bg-card shadow-elegant"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-gradient-primary opacity-20 blur-2xl" />

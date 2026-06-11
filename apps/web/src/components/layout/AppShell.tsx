@@ -45,7 +45,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const contextRole = activeWorkspace?.role ?? "owner";
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
+    <div className="flex h-dvh w-full overflow-hidden bg-background text-foreground">
       <aside className="flex h-full w-[260px] shrink-0 flex-col border-r border-border bg-sidebar">
         <div className="flex h-14 items-center border-b border-border px-3">
           <Link href="/projects" className="flex items-center gap-2">

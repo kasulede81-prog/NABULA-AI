@@ -121,7 +121,7 @@ export function DeploymentsTab({ projectId }: { projectId: string }) {
           </div>
         </div>
         {selectedRow && (
-          <div className="flex w-[420px] flex-col border-l border-border">
+          <div className="flex w-[420px] max-w-[50%] flex-col border-l border-border">
             <div className="flex h-10 items-center gap-2 border-b border-border px-4">
               <span
                 className={cn(

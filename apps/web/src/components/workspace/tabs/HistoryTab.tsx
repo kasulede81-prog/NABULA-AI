@@ -47,7 +47,6 @@ export function HistoryTab({ projectId, onOpenFile }: HistoryTabProps) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      await api.reindexCodebase(projectId).catch(() => undefined);
       const [res, snaps] = await Promise.all([
         api.listProjectHistory(projectId),
         api.listProjectSnapshots(projectId).catch(() => ({
@@ -118,7 +117,7 @@ export function HistoryTab({ projectId, onOpenFile }: HistoryTabProps) {
       </div>
 
       <div className="flex min-h-0 flex-1">
-        <aside className="w-80 shrink-0 overflow-y-auto border-r border-border p-2">
+        <aside className="w-80 max-w-[40%] shrink-0 overflow-y-auto border-r border-border p-2">
           {loading && (
             <p className="px-2 py-4 text-xs text-muted-foreground">Loading…</p>
           )}

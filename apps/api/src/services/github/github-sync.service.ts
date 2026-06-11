@@ -1,5 +1,4 @@
 import { prisma } from "../../lib/prisma";
-import { vfsService } from "../vfs.service";
 import { eventService } from "../event.service";
 import { SseEvents } from "@nebula/shared";
 import { githubFetch, GithubError } from "./github-api";
@@ -26,13 +25,15 @@ export class GithubSyncService {
 
     const record = await prisma.githubRepository.findUnique({
       where: { projectId },
+      select: { fileSnapshot: true },
     });
-    const diff = await this.computeDiff(projectId, userId, record?.fileSnapshot);
-    return {
-      syncAvailable: diff.added.length + diff.modified.length + diff.deleted.length > 0,
-      changedFileCount:
-        diff.added.length + diff.modified.length + diff.deleted.length,
-    };
+    // Status only needs counts — never load file contents here.
+    const { added, modified, deleted } = await this.computeChangedPaths(
+      projectId,
+      record?.fileSnapshot
+    );
+    const changedFileCount = added.length + modified.length + deleted.length;
+    return { syncAvailable: changedFileCount > 0, changedFileCount };
   }
 
   async syncRepository(projectId: string, userId: string) {
@@ -209,36 +210,61 @@ export class GithubSyncService {
     }
   }
 
-  private async computeDiff(
-    projectId: string,
-    userId: string,
-    snapshot: unknown
-  ): Promise<SyncDiff> {
-    const files = await vfsService.snapshot(projectId, userId);
+  /** Path/version-only diff: one indexed query, no file contents, no N+1. */
+  private async computeChangedPaths(projectId: string, snapshot: unknown) {
+    const rows = await prisma.file.findMany({
+      where: { projectId },
+      select: { path: true, version: true },
+    });
     const prev = (snapshot ?? {}) as FileSnapshot;
-    const currentPaths = new Set(files.map((f) => f.path));
+    const currentPaths = new Set(rows.map((r) => r.path));
 
-    const added: SyncDiff["added"] = [];
-    const modified: SyncDiff["modified"] = [];
-
-    for (const file of files) {
-      const prevEntry = prev[file.path];
+    const added: string[] = [];
+    const modified: string[] = [];
+    for (const row of rows) {
+      const prevEntry = prev[row.path];
       if (!prevEntry) {
-        added.push(file);
-      } else if (prevEntry.version !== undefined) {
-        const row = await prisma.file.findUnique({
-          where: { projectId_path: { projectId, path: file.path } },
-          select: { version: true },
-        });
-        if (row && row.version !== prevEntry.version) {
-          modified.push(file);
-        }
+        added.push(row.path);
+      } else if (
+        prevEntry.version !== undefined &&
+        prevEntry.version !== row.version
+      ) {
+        modified.push(row.path);
       }
     }
 
     const deleted = Object.keys(prev).filter((p) => !currentPaths.has(p));
-
     return { added, modified, deleted };
+  }
+
+  private async computeDiff(
+    projectId: string,
+    _userId: string,
+    snapshot: unknown
+  ): Promise<SyncDiff> {
+    const { added, modified, deleted } = await this.computeChangedPaths(
+      projectId,
+      snapshot
+    );
+
+    // Fetch content only for the files that actually changed.
+    const changedPaths = [...added, ...modified];
+    const contents = changedPaths.length
+      ? await prisma.file.findMany({
+          where: { projectId, path: { in: changedPaths } },
+          select: { path: true, content: true },
+        })
+      : [];
+    const byPath = new Map(contents.map((c) => [c.path, c.content]));
+
+    return {
+      added: added.map((path) => ({ path, content: byPath.get(path) ?? "" })),
+      modified: modified.map((path) => ({
+        path,
+        content: byPath.get(path) ?? "",
+      })),
+      deleted,
+    };
   }
 
   private async buildFileSnapshot(projectId: string): Promise<FileSnapshot> {

@@ -126,6 +126,21 @@ export class VfsService {
     return merged;
   }
 
+  /** Bulk read for editor LSP preloading — one query instead of N requests. */
+  async readFilesBulk(
+    projectId: string,
+    userId: string,
+    paths: string[]
+  ): Promise<Array<{ path: string; content: string; version: number }>> {
+    await projectService.get(projectId, userId);
+    if (paths.length === 0) return [];
+    return prisma.file.findMany({
+      where: { projectId, path: { in: paths } },
+      select: { path: true, content: true, version: true },
+      orderBy: { path: "asc" },
+    });
+  }
+
   async readFile(
     projectId: string,
     userId: string,

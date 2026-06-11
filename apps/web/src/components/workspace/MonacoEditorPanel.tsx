@@ -116,10 +116,11 @@ export function MonacoEditorPanel({
 
   useEffect(() => {
     let cancelled = false;
+    // Note: no reindexCodebase here — files are indexed incrementally on
+    // save; a full reindex on every editor mount hammers the DB.
     void Promise.all([
       api.listCodeSymbols(projectId),
       api.listFiles(projectId),
-      api.reindexCodebase(projectId).catch(() => undefined),
     ]).then(([symRes, filesRes]) => {
       if (cancelled) return;
       setSymbols(symRes.data);
