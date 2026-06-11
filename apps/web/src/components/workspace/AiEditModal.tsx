@@ -54,7 +54,11 @@ export function AiEditModal({
     setError(null);
     try {
       const saved = await api.applyAiEdit(projectId, path, modifiedContent);
-      onApplied(path, modifiedContent, saved.version);
+      if (saved.pendingReview) {
+        setError("Change staged for review — open the changeset panel to apply.");
+        return;
+      }
+      onApplied(path, modifiedContent, saved.version ?? 0);
     } catch (err) {
       const apiErr = err as { error?: { message?: string } };
       setError(apiErr.error?.message ?? "Apply failed");

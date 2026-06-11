@@ -3,15 +3,16 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
-import { useEnterWorkspace } from "@/hooks/useEnterWorkspace";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { BrandMark } from "@/components/brand/BrandMark";
 import { BRAND_TAGLINE } from "@/lib/brand";
+import { OAuthButtons } from "@/components/auth/OAuthButtons";
 
 export default function RegisterPage() {
   const { register, error } = useAuth();
-  const { enterWorkspace } = useEnterWorkspace();
+  const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,7 +23,7 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       await register(email, password, name);
-      await enterWorkspace();
+      router.push("/onboarding");
     } catch {
       // error set in hook
     } finally {
@@ -67,6 +68,9 @@ export default function RegisterPage() {
             Register
           </Button>
         </form>
+        <div className="my-4">
+          <OAuthButtons />
+        </div>
         <p className="mt-4 text-center text-sm text-muted-foreground">
           Already have an account?{" "}
           <Link href="/login" className="text-primary hover:underline">

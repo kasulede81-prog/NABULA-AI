@@ -23,6 +23,7 @@ import {
   requestBuildCancel,
 } from "../lib/build-cancel";
 import type { PipelineRunOptions } from "../types/pipeline";
+import { agentQueueService } from "./agent-queue.service";
 
 const MAX_BUILD_RETRIES = 2;
 
@@ -128,6 +129,7 @@ export class BuildService {
             errorContext: attempt > 1 ? lastError : undefined,
             attempt,
             llmProvider: options.llmProvider,
+            deferWrites: options.deferWrites,
           });
           return { phase: "ready" as const, ...result };
         } catch (err) {
@@ -253,51 +255,40 @@ export class BuildService {
     return this.isClarifierActive(projectId) || this.isBuilderActive(projectId);
   }
 
-  /** Fire-and-forget async pipeline (used from message/create hooks). */
+  /** Enqueue pipeline for background worker (priority queue for Pro). */
   schedulePipeline(
     projectId: string,
     userId: string,
     options: PipelineRunOptions = {}
   ) {
-    if (this.isPipelineActive(projectId)) {
-      return;
-    }
-    setImmediate(() => {
-      this.runPipeline(projectId, userId, options).catch((err) => {
-        console.error(`[build] Pipeline failed for ${projectId}:`, err);
-      });
+    void agentQueueService.enqueue({
+      projectId,
+      userId,
+      kind: "pipeline",
+      options,
     });
   }
 
-  /** Wait for active agent to finish, then run pipeline once. */
+  /** Enqueue pipeline after current agent finishes. */
   schedulePipelineWhenIdle(
     projectId: string,
     userId: string,
-    options: PipelineRunOptions = {},
-    maxWaitMs = 120_000
+    options: PipelineRunOptions = {}
   ) {
-    const startedAt = Date.now();
-    const poll = () => {
-      if (!this.isPipelineActive(projectId)) {
-        this.schedulePipeline(projectId, userId, options);
-        return;
-      }
-      if (Date.now() - startedAt >= maxWaitMs) {
-        return;
-      }
-      setTimeout(poll, 2000);
-    };
-    setTimeout(poll, 2000);
+    void agentQueueService.enqueue({
+      projectId,
+      userId,
+      kind: "pipeline",
+      options,
+      waitForIdle: true,
+    });
   }
 
   scheduleClarifier(projectId: string, userId: string) {
-    if (this.isClarifierActive(projectId)) {
-      return;
-    }
-    setImmediate(() => {
-      this.runClarifier(projectId, userId).catch((err) => {
-        console.error(`[build] Clarifier failed for ${projectId}:`, err);
-      });
+    void agentQueueService.enqueue({
+      projectId,
+      userId,
+      kind: "clarifier",
     });
   }
 
@@ -306,13 +297,11 @@ export class BuildService {
     userId: string,
     options: PipelineRunOptions = {}
   ) {
-    if (this.isBuilderActive(projectId)) {
-      return;
-    }
-    setImmediate(() => {
-      this.runBuilder(projectId, userId, options).catch((err) => {
-        console.error(`[build] Builder failed for ${projectId}:`, err);
-      });
+    void agentQueueService.enqueue({
+      projectId,
+      userId,
+      kind: "builder",
+      options,
     });
   }
 }

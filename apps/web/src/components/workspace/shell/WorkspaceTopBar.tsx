@@ -6,17 +6,19 @@ import {
   Rocket,
   Share2,
   ChevronDown,
-  Bell,
 } from "lucide-react";
 import { ShadcnButton } from "@/components/ui/shadcn-button";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { useToast } from "@/hooks/useToast";
+import { WorkspaceNotifications } from "@/components/workspace/shell/WorkspaceNotifications";
+import type { SseMessage } from "@/hooks/useSSE";
 import type { ReactNode } from "react";
 
 interface WorkspaceTopBarProps {
   projectId: string;
   projectName: string;
   projectStatus: string;
+  sseEvents?: SseMessage[];
   actions?: ReactNode;
   onDeploy?: () => void;
   onDomains?: () => void;
@@ -34,6 +36,7 @@ export function WorkspaceTopBar({
   projectId,
   projectName,
   projectStatus,
+  sseEvents = [],
   actions,
   onDeploy,
   onDomains,
@@ -76,13 +79,7 @@ export function WorkspaceTopBar({
       </div>
 
       <div className="ml-auto flex items-center gap-2">
-        <button
-          type="button"
-          className="relative grid h-8 w-8 place-items-center rounded-md transition-smooth hover:bg-secondary"
-          title="Notifications (coming soon)"
-        >
-          <Bell className="h-4 w-4 text-muted-foreground" />
-        </button>
+        <WorkspaceNotifications projectId={projectId} sseEvents={sseEvents} />
         <ShadcnButton
           variant="outline"
           size="sm"

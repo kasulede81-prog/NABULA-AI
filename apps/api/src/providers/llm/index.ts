@@ -5,6 +5,8 @@ import {
 } from "../../config/llm-provider";
 import { ClaudeProvider } from "./claude.provider";
 import { DeepSeekProvider } from "./deepseek.provider";
+import { OpenAIProvider } from "./openai.provider";
+import { GeminiProvider } from "./gemini.provider";
 
 let provider: LLMProvider | null = null;
 let providerId: LLMProviderId | null = null;
@@ -14,6 +16,10 @@ export function createLLMProviderForId(id: LLMProviderId): LLMProvider {
   switch (id) {
     case "deepseek":
       return new DeepSeekProvider();
+    case "openai":
+      return new OpenAIProvider();
+    case "gemini":
+      return new GeminiProvider();
     case "anthropic":
     default:
       return new ClaudeProvider();
@@ -49,4 +55,4 @@ export function resetLLMProvider(): void {
   providerId = null;
 }
 
-export { ClaudeProvider, DeepSeekProvider };
+export { ClaudeProvider, DeepSeekProvider, OpenAIProvider, GeminiProvider };

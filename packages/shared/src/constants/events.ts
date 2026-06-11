@@ -1,6 +1,11 @@
 export const SseEvents = {
   CONNECTED: "connected",
   MESSAGE_CREATED: "message.created",
+  MESSAGE_DELTA: "message.delta",
+  CHANGESET_PROPOSED: "changeset.proposed",
+  CHANGESET_APPLIED: "changeset.applied",
+  CHANGESET_DISCARDED: "changeset.discarded",
+  NOTIFICATION_CREATED: "notification.created",
   FILE_CREATED: "file.created",
   FILE_UPDATED: "file.updated",
   FILE_DELETED: "file.deleted",

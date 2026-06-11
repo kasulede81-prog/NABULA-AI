@@ -5,6 +5,7 @@ import type { RegisterInput, LoginInput } from "@nebula/shared";
 import { billingService } from "./billing/billing.service";
 import { PLAN_LIMITS } from "./billing/billing-plans";
 import { userActivityService } from "./stability/user-activity.service";
+import { emailService } from "./email.service";
 
 const SESSION_DAYS = 7;
 
@@ -46,7 +47,9 @@ export class AuthService {
       },
     });
 
-    return this.createSession(user.id);
+    const session = await this.createSession(user.id);
+    void emailService.sendWelcome(user.email, user.name).catch(() => undefined);
+    return session;
   }
 
   async login(input: LoginInput) {
@@ -121,6 +124,10 @@ export class AuthService {
     }
 
     return session.user;
+  }
+
+  async createSessionForUser(userId: string) {
+    return this.createSession(userId);
   }
 
   private async createSession(userId: string) {

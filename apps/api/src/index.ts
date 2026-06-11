@@ -3,14 +3,19 @@ import { env } from "./config/env";
 import { logAgentReadinessWarning } from "./config/agent-readiness";
 import { assertSupabaseServerConfig } from "./config/supabase-readiness";
 import { previewLifecycleService } from "./services/preview-lifecycle.service";
+import { agentQueueService } from "./services/agent-queue.service";
+import { eventService } from "./services/event.service";
 
 async function main() {
   assertSupabaseServerConfig();
   logAgentReadinessWarning();
+  await eventService.init();
   const app = await buildApp();
   previewLifecycleService.start();
+  agentQueueService.startWorker();
 
   const shutdown = () => {
+    agentQueueService.stopWorker();
     previewLifecycleService.stop();
     void app.close().finally(() => process.exit(0));
   };

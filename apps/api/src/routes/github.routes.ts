@@ -9,6 +9,7 @@ import { QuotaExceededError } from "../services/billing/billing.service";
 import { rateLimitByUser } from "../middleware/rate-limit";
 import { captureRouteError } from "../services/stability/error-capture";
 import { githubTrackingService } from "../services/collaboration/github-tracking.service";
+import { githubPrService } from "../services/github/github-pr.service";
 
 const connectSchema = z.object({
   token: z.string().min(1, "GitHub token is required"),
@@ -217,6 +218,23 @@ export async function githubRoutes(app: FastifyInstance) {
         }
       }
     );
+
+    authed.post("/projects/:projectId/github/pull-request", async (request, reply) => {
+      const { userId } = request as AuthenticatedRequest;
+      const { projectId } = request.params as { projectId: string };
+      const body = (request.body ?? {}) as { title?: string; body?: string };
+
+      try {
+        const result = await githubPrService.createPullRequest(
+          projectId,
+          userId,
+          body
+        );
+        return { data: result };
+      } catch (err) {
+        return handleGithubError(err, reply, { userId, projectId });
+      }
+    });
 
     authed.post("/projects/:projectId/github/sync", async (request, reply) => {
       const { userId } = request as AuthenticatedRequest;

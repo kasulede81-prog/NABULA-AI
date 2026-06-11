@@ -7,7 +7,12 @@ import { env } from "../config/env";
 import { llmProviderLabels, type LlmProviderId } from "@nebula/shared";
 import { authenticate } from "../middleware/auth";
 
-const ALL_PROVIDERS: LlmProviderId[] = ["anthropic", "deepseek"];
+const ALL_PROVIDERS: LlmProviderId[] = [
+  "anthropic",
+  "deepseek",
+  "openai",
+  "gemini",
+];
 
 export async function llmRoutes(app: FastifyInstance) {
   app.addHook("preHandler", authenticate);

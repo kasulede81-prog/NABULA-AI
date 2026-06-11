@@ -196,9 +196,15 @@ export function mapMessagesToOpenAI(
 
         : message.content
 
-            .filter((block) => block.type === "text")
+            .map((block) =>
+              block.type === "text"
+                ? block.text
+                : block.type === "image"
+                  ? "[Image attached — DeepSeek does not support image input]"
+                  : ""
+            )
 
-            .map((block) => (block.type === "text" ? block.text : ""))
+            .filter(Boolean)
 
             .join("\n");
 

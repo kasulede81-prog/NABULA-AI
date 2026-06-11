@@ -5,6 +5,8 @@ import { requireQuota, consumeQuota } from "../middleware/quota";
 import { QuotaExceededError } from "../services/billing/billing.service";
 import { rateLimitByUser } from "../middleware/rate-limit";
 import { captureRouteError } from "../services/stability/error-capture";
+import { previewSyncService } from "../services/preview/preview-sync.service";
+import { vfsService } from "../services/vfs.service";
 
 function handlePreviewError(
   err: unknown,
@@ -139,6 +141,22 @@ export async function previewRoutes(app: FastifyInstance) {
     try {
       const preview = await previewService.get(projectId, userId);
       return { data: preview };
+    } catch (err) {
+      return handlePreviewError(err, reply, { userId, projectId });
+    }
+  });
+
+  app.post("/projects/:projectId/preview/sync", async (request, reply) => {
+    const { userId } = request as AuthenticatedRequest;
+    const { projectId } = request.params as { projectId: string };
+
+    try {
+      const files = await vfsService.snapshot(projectId, userId);
+      const result = await previewSyncService.syncProjectFiles(
+        projectId,
+        files.map((f) => ({ path: f.path, content: f.content }))
+      );
+      return { data: result };
     } catch (err) {
       return handlePreviewError(err, reply, { userId, projectId });
     }

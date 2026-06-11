@@ -10,6 +10,8 @@ import {
   FolderKanban,
   LogOut,
   MessageSquare,
+  Plug,
+  ScrollText,
   Settings,
   User,
   Users,
@@ -23,6 +25,8 @@ const nav = [
   { href: "/projects", label: "Projects", icon: FolderKanban },
   { href: "/workspaces", label: "Workspaces", icon: Users },
   { href: "/settings/billing", label: "Billing", icon: Settings },
+  { href: "/settings/integrations", label: "Integrations", icon: Plug },
+  { href: "/settings/rules", label: "Rules", icon: ScrollText },
   { href: "/settings/feedback", label: "Feedback", icon: MessageSquare },
 ] as const;
 

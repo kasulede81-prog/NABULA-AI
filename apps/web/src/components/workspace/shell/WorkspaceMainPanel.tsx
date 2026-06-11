@@ -42,12 +42,21 @@ const AgentRunsTab = dynamic(
   () => import("../tabs/AgentRunsTab").then((m) => m.AgentRunsTab),
   { ssr: false, loading: () => tabLoading }
 );
+const HistoryTab = dynamic(
+  () => import("../tabs/HistoryTab").then((m) => m.HistoryTab),
+  { ssr: false, loading: () => tabLoading }
+);
+const McpTab = dynamic(
+  () => import("../tabs/McpTab").then((m) => m.McpTab),
+  { ssr: false, loading: () => tabLoading }
+);
 
 interface WorkspaceMainPanelProps {
   view: WorkspaceView;
   projectId: string;
   workspaceId: string | null;
   agent: ReactNode;
+  onOpenFile?: (path: string) => void;
 }
 
 export function WorkspaceMainPanel({
@@ -55,6 +64,7 @@ export function WorkspaceMainPanel({
   projectId,
   workspaceId,
   agent,
+  onOpenFile,
 }: WorkspaceMainPanelProps) {
   if (view === "agent") {
     return <div className="h-full min-w-0 flex-1 overflow-hidden">{agent}</div>;
@@ -112,6 +122,22 @@ export function WorkspaceMainPanel({
     return (
       <div className="h-full min-w-0 flex-1 overflow-hidden">
         <AgentRunsTab projectId={projectId} />
+      </div>
+    );
+  }
+
+  if (view === "history") {
+    return (
+      <div className="h-full min-w-0 flex-1 overflow-hidden">
+        <HistoryTab projectId={projectId} onOpenFile={onOpenFile} />
+      </div>
+    );
+  }
+
+  if (view === "mcp") {
+    return (
+      <div className="h-full min-w-0 flex-1 overflow-hidden">
+        <McpTab projectId={projectId} />
       </div>
     );
   }

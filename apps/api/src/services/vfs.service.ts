@@ -6,6 +6,9 @@ import {
 } from "../lib/cursor-pagination";
 import { projectService } from "./project.service";
 import { eventService } from "./event.service";
+import { fileHistoryService, type FileChangeSource } from "./file-history.service";
+import { codeIndexService } from "./code-index.service";
+import { previewSyncService } from "./preview/preview-sync.service";
 import {
   AgentError,
   NonRetryableErrorCodes,
@@ -76,32 +79,70 @@ export class VfsService {
     const q = query.trim();
     if (!q) return [];
 
-    const rows = await prisma.file.findMany({
-      where: {
-        projectId,
-        OR: [
-          { path: { contains: q, mode: "insensitive" } },
-          { content: { contains: q, mode: "insensitive" } },
-        ],
-      },
-      orderBy: { path: "asc" },
-      take: limit,
-      select: { path: true, content: true },
-    });
+    const [rows, symbols] = await Promise.all([
+      prisma.file.findMany({
+        where: {
+          projectId,
+          OR: [
+            { path: { contains: q, mode: "insensitive" } },
+            { content: { contains: q, mode: "insensitive" } },
+          ],
+        },
+        orderBy: { path: "asc" },
+        take: limit,
+        select: { path: true, content: true },
+      }),
+      codeIndexService.searchSymbols(projectId, q, Math.min(limit, 15)),
+    ]);
 
-    return rows.map((row) => {
+    const fileHits = rows.map((row) => {
       const idx = row.content.toLowerCase().indexOf(q.toLowerCase());
       const start = idx >= 0 ? Math.max(0, idx - 40) : 0;
       const snippet =
         idx >= 0
           ? row.content.slice(start, start + 120).replace(/\s+/g, " ")
           : row.path;
-      return { path: row.path, snippet };
+      return { path: row.path, snippet, kind: "file" as const };
     });
+
+    const symbolHits = symbols.map((s) => ({
+      path: s.path,
+      snippet: `${s.kind} ${s.name} (line ${s.line})`,
+      kind: "symbol" as const,
+      symbol: s.name,
+      line: s.line,
+    }));
+
+    const seen = new Set<string>();
+    const merged = [];
+    for (const hit of [...symbolHits, ...fileHits]) {
+      const key = hit.kind === "symbol" ? `sym:${hit.path}:${hit.snippet}` : hit.path;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(hit);
+      if (merged.length >= limit) break;
+    }
+
+    return merged;
   }
 
-  async readFile(projectId: string, userId: string, path: string) {
+  async readFile(
+    projectId: string,
+    userId: string,
+    path: string,
+    version?: number
+  ) {
     await projectService.get(projectId, userId);
+
+    if (version != null) {
+      const row = await fileHistoryService.readVersion(projectId, userId, path, version);
+      return {
+        path: row.path,
+        content: row.content,
+        version: row.version,
+        createdAt: row.createdAt,
+      };
+    }
 
     const file = await prisma.file.findUnique({
       where: { projectId_path: { projectId, path } },
@@ -122,7 +163,8 @@ export class VfsService {
   async writeFiles(
     projectId: string,
     userId: string,
-    files: Array<{ path: string; content: string }>
+    files: Array<{ path: string; content: string }>,
+    options: { source?: FileChangeSource } = {}
   ) {
     await projectService.get(projectId, userId);
 
@@ -131,6 +173,7 @@ export class VfsService {
     for (const { path, content } of files) {
       const result = await this.writeFile(projectId, userId, path, content, {
         skipAuth: true,
+        source: options.source ?? "user",
       });
       results.push(result);
     }
@@ -141,6 +184,11 @@ export class VfsService {
       count: results.length,
       paths: results.map((r) => r.path),
     });
+
+    previewSyncService.scheduleSync(
+      projectId,
+      files.map((f) => ({ path: f.path, content: f.content }))
+    );
 
     return {
       written: results.map((r) => r.path),
@@ -153,7 +201,7 @@ export class VfsService {
     userId: string,
     path: string,
     content: string,
-    options: { skipAuth?: boolean } = {}
+    options: { skipAuth?: boolean; source?: FileChangeSource } = {}
   ) {
     if (!options.skipAuth) {
       await projectService.get(projectId, userId);
@@ -164,6 +212,16 @@ export class VfsService {
     const existing = await prisma.file.findUnique({
       where: { projectId_path: { projectId, path } },
     });
+
+    if (existing) {
+      await fileHistoryService.archiveVersion(
+        projectId,
+        path,
+        existing.version,
+        existing.content,
+        options.source ?? "user"
+      );
+    }
 
     let file;
     try {
@@ -202,6 +260,8 @@ export class VfsService {
       message: `${existing ? "Updated" : "Created"} ${path}`,
       path,
     });
+
+    codeIndexService.scheduleIndexFile(projectId, path, safeContent);
 
     return {
       path: file.path,

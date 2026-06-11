@@ -9,6 +9,7 @@ import { eventService } from "./event.service";
 import { SseEvents } from "@nebula/shared";
 import type { CreateMessageInput } from "@nebula/shared";
 import { buildService } from "./build.service";
+import { askService } from "./ask.service";
 import { buildMessageContext } from "./message-context.service";
 import type { PipelineRunOptions } from "../types/pipeline";
 
@@ -122,10 +123,28 @@ export class MessageService {
 
     eventService.publish(projectId, SseEvents.MESSAGE_CREATED, message);
 
-    applyMessagePipelineScheduling(project, projectId, userId, {
-      userMessage: agentContent,
-      llmProvider: input.llmProvider,
-    });
+    if (input.chatMode === "ask") {
+      askService.schedule(projectId, userId, {
+        agentContent,
+        llmProvider: input.llmProvider,
+        images: input.images,
+      });
+    } else {
+      // Pipeline agents are text-driven; note attachments so they aren't silent.
+      const imageNote =
+        input.images && input.images.length > 0
+          ? `\n\n[User attached ${input.images.length} image(s) — switch to Ask mode to analyze them visually]`
+          : "";
+      const deferWrites =
+        input.chatMode === "composer" ||
+        project.status === "ready" ||
+        project.status === "failed";
+      applyMessagePipelineScheduling(project, projectId, userId, {
+        userMessage: agentContent + imageNote,
+        llmProvider: input.llmProvider,
+        deferWrites,
+      });
+    }
 
     return message;
   }

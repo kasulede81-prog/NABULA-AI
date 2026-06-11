@@ -13,6 +13,7 @@ interface BillingStatus {
   creditsRemaining: number;
   renewsAt: string | null;
   priorityQueue: boolean;
+  stripeConfigured?: boolean;
   limits: {
     monthlyProjects: number | null;
     dailyAiRequests: number | null;
@@ -77,7 +78,13 @@ export default function BillingPage() {
 
   const handleUpgradeToPro = async () => {
     setUpgrading(true);
+    setError(null);
     try {
+      if (status?.stripeConfigured) {
+        const res = await api.createStripeCheckout();
+        window.location.href = res.data.url;
+        return;
+      }
       const res = await api.requestProUpgrade();
       setPendingUpgrade(true);
       setChatOpen(true);
@@ -86,7 +93,21 @@ export default function BillingPage() {
       }
     } catch (err) {
       const e = err as { error?: { message?: string } };
-      setError(e.error?.message ?? "Failed to request upgrade");
+      setError(e.error?.message ?? "Failed to start upgrade");
+    } finally {
+      setUpgrading(false);
+    }
+  };
+
+  const handleManageBilling = async () => {
+    setUpgrading(true);
+    setError(null);
+    try {
+      const res = await api.createStripePortal();
+      window.location.href = res.data.url;
+    } catch (err) {
+      const e = err as { error?: { message?: string } };
+      setError(e.error?.message ?? "Failed to open billing portal");
     } finally {
       setUpgrading(false);
     }
@@ -233,20 +254,32 @@ export default function BillingPage() {
 
       {isPro && (
         <section className="rounded-lg border border-surface-border bg-surface-card p-5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-medium text-white">Support</h2>
-            <Button
-              variant="ghost"
-              className="px-3 py-1 text-xs"
-              onClick={() => setChatOpen(true)}
-            >
-              Chat
-              {unreadMessages > 0 && (
-                <span className="ml-1 rounded-full bg-red-500 px-1.5 text-[10px] text-white">
-                  {unreadMessages}
-                </span>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-medium text-white">Pro subscription</h2>
+            <div className="flex gap-2">
+              {status.stripeConfigured && (
+                <Button
+                  variant="ghost"
+                  className="px-3 py-1 text-xs"
+                  onClick={() => void handleManageBilling()}
+                  loading={upgrading}
+                >
+                  Manage billing
+                </Button>
               )}
-            </Button>
+              <Button
+                variant="ghost"
+                className="px-3 py-1 text-xs"
+                onClick={() => setChatOpen(true)}
+              >
+                Support chat
+                {unreadMessages > 0 && (
+                  <span className="ml-1 rounded-full bg-red-500 px-1.5 text-[10px] text-white">
+                    {unreadMessages}
+                  </span>
+                )}
+              </Button>
+            </div>
           </div>
         </section>
       )}

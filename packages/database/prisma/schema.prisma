@@ -33,6 +33,20 @@ enum AgentRunStatus {
   failed
 }
 
+enum AgentQueueJobKind {
+  pipeline
+  clarifier
+  builder
+}
+
+enum AgentQueueJobStatus {
+  pending
+  running
+  completed
+  failed
+  cancelled
+}
+
 enum PreviewStatus {
   starting
   ready
@@ -237,6 +251,7 @@ model User {
   email            String            @unique
   passwordHash     String            @map("password_hash")
   name             String
+  agentRules       String?           @map("agent_rules")
   stripeCustomerId String?           @map("stripe_customer_id")
   lastLoginAt      DateTime?         @map("last_login_at")
   createdAt        DateTime          @default(now()) @map("created_at")
@@ -244,6 +259,8 @@ model User {
   subscription     Subscription?
   projects         Project[]
   agentRuns        AgentRun[]
+  agentQueueJobs   AgentQueueJob[]
+  projectNotifications ProjectNotification[]
   githubConnection GithubConnection?
   analyticsEvents  AnalyticsEvent[]
   adminAuditLogs   AdminAuditLog[]   @relation("AdminActor")
@@ -590,13 +607,18 @@ model Project {
   githubExportedAt     DateTime? @map("github_exported_at")
   buildCount           Int       @default(0) @map("build_count")
   agentRules           String?   @map("agent_rules")
+  mcpServers           Json      @default("[]") @map("mcp_servers")
+  mcpAllowWrites       Boolean   @default(false) @map("mcp_allow_writes")
   createdAt            DateTime  @default(now()) @map("created_at")
   updatedAt            DateTime  @updatedAt @map("updated_at")
   user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   workspace  Workspace?    @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   messages   Message[]
   files      File[]
+  fileVersions     FileVersion[]
+  codeIndexEntries CodeIndexEntry[]
   agentRuns        AgentRun[]
+  agentQueueJobs   AgentQueueJob[]
   preview          Preview?
   analyticsEvents  AnalyticsEvent[]
   githubRepository GithubRepository?
@@ -605,6 +627,8 @@ model Project {
   domains          ProjectDomain[]
   notes            ProjectNote[]
   recordings       ProjectRecording[]
+  notifications           ProjectNotification[]
+  pendingChangesetEntries PendingChangesetEntry[]
 
   @@unique([userId, slug])
   @@unique([workspaceId, slug])
@@ -721,6 +745,90 @@ model File {
   @@unique([projectId, path])
   @@index([projectId, path])
   @@map("files")
+}
+
+model FileVersion {
+  id        String   @id @default(uuid()) @db.Uuid
+  projectId String   @map("project_id") @db.Uuid
+  path      String
+  version   Int
+  content   String
+  source    String   @default("user")
+  createdAt DateTime @default(now()) @map("created_at")
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, path, version])
+  @@index([projectId, createdAt(sort: Desc)])
+  @@map("file_versions")
+}
+
+model CodeIndexEntry {
+  id        String   @id @default(uuid()) @db.Uuid
+  projectId String   @map("project_id") @db.Uuid
+  path      String
+  kind      String
+  name      String
+  line      Int
+  column    Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, path, kind, name, line])
+  @@index([projectId, name])
+  @@map("code_index_entries")
+}
+
+model PendingChangesetEntry {
+  id              String   @id @default(uuid()) @db.Uuid
+  projectId       String   @map("project_id") @db.Uuid
+  path            String
+  content         String   @db.Text
+  previousContent String   @default("") @map("previous_content") @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, path])
+  @@index([projectId])
+  @@map("pending_changeset_entries")
+}
+
+model ProjectNotification {
+  id        String   @id @default(uuid()) @db.Uuid
+  projectId String   @map("project_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  type      String
+  title     String
+  body      String   @default("")
+  read      Boolean  @default(false)
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, read, createdAt(sort: Desc)])
+  @@map("project_notifications")
+}
+
+model AgentQueueJob {
+  id           String              @id @default(uuid()) @db.Uuid
+  projectId    String              @map("project_id") @db.Uuid
+  userId       String              @map("user_id") @db.Uuid
+  kind         AgentQueueJobKind
+  status       AgentQueueJobStatus @default(pending)
+  priority     Int                 @default(0)
+  waitForIdle  Boolean             @default(false) @map("wait_for_idle")
+  payload      Json                @default("{}")
+  errorMessage String?             @map("error_message")
+  createdAt    DateTime            @default(now()) @map("created_at")
+  startedAt    DateTime?           @map("started_at")
+  completedAt  DateTime?           @map("completed_at")
+  project      Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, priority(sort: Desc), createdAt(sort: Asc)])
+  @@index([projectId, createdAt(sort: Desc)])
+  @@map("agent_queue_jobs")
 }
 
 model AgentRun {

@@ -20,7 +20,11 @@ export function FileSearchPalette({
 }: FileSearchPaletteProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<
-    Array<{ path: string; snippet: string }>
+    Array<{
+      path: string;
+      snippet: string;
+      kind?: "file" | "symbol";
+    }>
   >([]);
   const [loading, setLoading] = useState(false);
   const [activeIdx, setActiveIdx] = useState(0);
@@ -51,8 +55,31 @@ export function FileSearchPalette({
       setLoading(true);
       void api
         .searchProjectFiles(projectId, query.trim())
-        .then((res) => {
-          setResults(res.data);
+        .then(async (res) => {
+          if (res.data.length >= 3) {
+            setResults(res.data);
+            setActiveIdx(0);
+            return;
+          }
+          const semantic = await api
+            .semanticCodebaseSearch(projectId, query.trim(), 12)
+            .catch(() => ({ data: [] }));
+          const merged = [
+            ...res.data,
+            ...semantic.data.map((hit) => ({
+              path: hit.path,
+              snippet: `${hit.reason} — ${hit.snippet}`,
+              kind: "file" as const,
+            })),
+          ];
+          const seen = new Set<string>();
+          setResults(
+            merged.filter((r) => {
+              if (seen.has(r.path)) return false;
+              seen.add(r.path);
+              return true;
+            })
+          );
           setActiveIdx(0);
         })
         .catch(() => setResults([]))
@@ -86,7 +113,7 @@ export function FileSearchPalette({
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search files… (Cmd+K)"
+            placeholder="Search files & symbols… (Cmd+K)"
             className="flex-1 bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground"
             onKeyDown={(e) => {
               if (e.key === "ArrowDown") {
@@ -116,12 +143,12 @@ export function FileSearchPalette({
             query.trim().length >= 2 &&
             results.length === 0 && (
               <p className="px-3 py-4 text-sm text-muted-foreground">
-                No files found
+                No matches found
               </p>
             )}
           {results.map((row, idx) => (
             <button
-              key={row.path}
+              key={`${row.kind ?? "file"}:${row.path}:${row.snippet}`}
               type="button"
               onClick={() => pick(row.path)}
               className={cn(
@@ -133,7 +160,14 @@ export function FileSearchPalette({
             >
               <FileCode className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
               <div className="min-w-0">
-                <div className="truncate font-mono text-xs">{row.path}</div>
+                <div className="flex items-center gap-2">
+                  <span className="truncate font-mono text-xs">{row.path}</span>
+                  {row.kind === "symbol" && (
+                    <span className="shrink-0 rounded bg-primary/15 px-1 text-[10px] text-primary">
+                      symbol
+                    </span>
+                  )}
+                </div>
                 <div className="truncate text-[11px] text-muted-foreground">
                   {row.snippet}
                 </div>

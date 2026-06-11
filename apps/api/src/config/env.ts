@@ -33,11 +33,31 @@ const envSchema = z.object({
   API_PORT: z.coerce.number().default(3001),
   API_HOST: z.string().default("0.0.0.0"),
   WEB_URL: z.string().url().default("http://localhost:3000"),
-  LLM_PROVIDER: z.enum(["anthropic", "deepseek"]).default("anthropic"),
+  LLM_PROVIDER: z
+    .enum(["anthropic", "deepseek", "openai", "gemini"])
+    .default("anthropic"),
   ANTHROPIC_API_KEY: z.string().default(""),
   CLAUDE_MODEL: z.string().default("claude-sonnet-4-20250514"),
   DEEPSEEK_API_KEY: z.string().default(""),
   DEEPSEEK_MODEL: z.string().default("deepseek-chat"),
+  OPENAI_API_KEY: z.string().default(""),
+  OPENAI_MODEL: z.string().default("gpt-4o-mini"),
+  GEMINI_API_KEY: z.string().default(""),
+  GEMINI_MODEL: z.string().default("gemini-2.0-flash"),
+  FILE_STORAGE_BACKEND: z.enum(["postgres", "supabase"]).default("postgres"),
+  REVIEWER_AGENT_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
+  BUGBOT_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
+  TAB_AUTOCOMPLETE_ENABLED: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((v) => v === "true"),
+  TAVILY_API_KEY: z.string().default(""),
   E2B_API_KEY: z.string().default(""),
   E2B_PREVIEW_TEMPLATE: z.string().default("nebula-nextjs-prisma"),
   PREVIEW_TTL_MS: z.coerce.number().default(2 * 60 * 60 * 1000),
@@ -59,6 +79,23 @@ const envSchema = z.object({
   RATE_LIMIT_AI_PER_MIN: z.coerce.number().default(30),
   RATE_LIMIT_PREVIEW_PER_MIN: z.coerce.number().default(10),
   RATE_LIMIT_GITHUB_PER_MIN: z.coerce.number().default(5),
+  RATE_LIMIT_API_PER_MIN: z.coerce.number().default(120),
+  REDIS_URL: z.string().default(""),
+  AUTO_PREVIEW_ENABLED: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((v) => v === "true"),
+  NODE_ENV: z
+    .enum(["development", "production", "test"])
+    .default("development"),
+  SENTRY_DSN: z.string().default(""),
+  RESEND_API_KEY: z.string().default(""),
+  RESEND_FROM_EMAIL: z.string().default("Nebula <onboarding@resend.dev>"),
+  POSTHOG_API_KEY: z.string().default(""),
+  POSTHOG_HOST: z.string().default("https://us.i.posthog.com"),
+  STRIPE_SECRET_KEY: z.string().default(""),
+  STRIPE_WEBHOOK_SECRET: z.string().default(""),
+  STRIPE_PRICE_PRO: z.string().default(""),
 });
 
 const parsed = envSchema.safeParse(process.env);

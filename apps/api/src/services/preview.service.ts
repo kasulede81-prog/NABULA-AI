@@ -18,6 +18,7 @@ import {
 } from "@nebula/shared";
 import { previewRunner } from "./preview/preview-runner";
 import { previewLogStore } from "./preview/preview-log-store";
+import { notificationService } from "./notification.service";
 
 type PreviewStatus = "starting" | "ready" | "stopped" | "error";
 
@@ -390,6 +391,15 @@ export class PreviewService {
         phase: PreviewPhases.PREVIEW_READY,
         expiresAt: expiresAt.toISOString(),
       });
+
+      void notificationService
+        .create(projectId, userId, {
+          type: "preview.ready",
+          title: "Preview ready",
+          body: result.previewUrl,
+          metadata: { previewId: ready.id, url: result.previewUrl },
+        })
+        .catch(() => undefined);
 
       await analyticsService.trackPlatform(
         PlatformMetricEvents.PREVIEW_READY,

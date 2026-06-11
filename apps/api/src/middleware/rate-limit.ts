@@ -17,7 +17,7 @@ export function rateLimit(bucket: RateLimitBucket, keyFn?: (req: FastifyRequest)
   return async (request: FastifyRequest, reply: FastifyReply) => {
     const id = keyFn ? keyFn(request) : clientIp(request);
     try {
-      rateLimitService.check(bucket, id);
+      await rateLimitService.check(bucket, id);
     } catch (err) {
       if (err instanceof RateLimitExceededError) {
         return reply
@@ -40,7 +40,7 @@ export function rateLimitByUser(bucket: RateLimitBucket) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
     const { userId } = request as AuthenticatedRequest;
     try {
-      rateLimitService.check(bucket, userId);
+      await rateLimitService.check(bucket, userId);
     } catch (err) {
       if (err instanceof RateLimitExceededError) {
         return reply

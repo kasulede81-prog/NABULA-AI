@@ -24,6 +24,8 @@ import {
   User,
   Bot,
   ScrollText,
+  History,
+  Plug,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/brand/BrandMark";
@@ -38,7 +40,9 @@ const nav: {
 }[] = [
   { icon: Sparkles, label: "Agent", view: "agent" },
   { icon: Bot, label: "Agent runs", view: "agents" },
+  { icon: Plug, label: "MCP", view: "mcp" },
   { icon: ScrollText, label: "Rules", view: "rules" },
+  { icon: History, label: "History", view: "history" },
   { icon: Database, label: "Database", view: "database" },
   { icon: Cloud, label: "Deployments", view: "deployments" },
   { icon: Globe, label: "Domains", view: "domains" },

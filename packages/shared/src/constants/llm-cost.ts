@@ -9,6 +9,8 @@ export interface LlmCostRates {
 export const LLM_COST_RATES: Record<LLMProviderId, LlmCostRates> = {
   deepseek: { inputPerM: 0.27, outputPerM: 1.1 },
   anthropic: { inputPerM: 3.0, outputPerM: 15.0 },
+  openai: { inputPerM: 0.15, outputPerM: 0.6 },
+  gemini: { inputPerM: 0.1, outputPerM: 0.4 },
 };
 
 export function estimateLlmCostUsd(

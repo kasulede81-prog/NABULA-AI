@@ -12,6 +12,7 @@ import {
 import { githubAuthService } from "./github-auth.service";
 import { githubAuditService } from "./github-audit.service";
 import type { FileSnapshot } from "./github-sync.service";
+import { GITHUB_CI_WORKFLOW } from "../../lib/github-ci-workflow";
 
 function buildReadme(name: string, prompt: string): string {
   const excerpt = prompt.trim().slice(0, 500);
@@ -77,11 +78,15 @@ export class GithubRepositoryService {
     const hasReadme = files.some(
       (f) => f.path.toLowerCase() === readmePath.toLowerCase()
     );
-    const pushFiles = hasReadme
+    const ciPath = ".github/workflows/nebula-ci.yml";
+    const withCi = files.some((f) => f.path === ciPath)
       ? files
+      : [...files, { path: ciPath, content: GITHUB_CI_WORKFLOW }];
+    const pushFiles = hasReadme
+      ? withCi
       : [
           { path: readmePath, content: buildReadme(project.name, project.prompt) },
-          ...files,
+          ...withCi,
         ];
 
     eventService.publish(projectId, SseEvents.GITHUB_EXPORT_STARTED, {

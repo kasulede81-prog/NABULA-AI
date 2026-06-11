@@ -10,7 +10,6 @@ import {
   type ReactNode,
 } from "react";
 import { api, type ApiError } from "@/lib/api";
-import { hasStoredToken } from "@/lib/auth-storage";
 
 interface User {
   id: string;
@@ -39,7 +38,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(() => hasStoredToken());
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const refreshInFlight = useRef<Promise<void> | null>(null);
 
@@ -49,13 +48,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const run = (async () => {
-      const token = api.getToken();
-      if (!token) {
-        setUser(null);
-        setLoading(false);
-        return;
-      }
-
       try {
         const me = await api.me();
         setUser(me);

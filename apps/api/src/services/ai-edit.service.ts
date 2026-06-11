@@ -4,6 +4,7 @@ import { resolveLLMProvider } from "../providers/llm";
 import { getProjectRulesBlock } from "./message-context.service";
 import { projectService } from "./project.service";
 import { vfsService } from "./vfs.service";
+import { pendingChangesetService } from "./pending-changeset.service";
 import {
   analyticsService,
   WorkspaceMetricEvents,
@@ -12,6 +13,7 @@ import {
 export const aiEditSchema = z.object({
   path: vfsPathSchema,
   instruction: z.string().min(1).max(4000),
+  selectedText: z.string().max(50_000).optional(),
 });
 
 const MAX_FILE_BYTES = 1_000_000;
@@ -31,7 +33,8 @@ export class AiEditService {
     projectId: string,
     userId: string,
     path: string,
-    instruction: string
+    instruction: string,
+    selectedText?: string
   ) {
     await projectService.get(projectId, userId);
     const file = await vfsService.readFile(projectId, userId, path);
@@ -53,6 +56,10 @@ export class AiEditService {
 
     const rulesBlock = await getProjectRulesBlock(projectId);
     const llm = resolveLLMProvider();
+    const selectionBlock = selectedText?.trim()
+      ? `\n\nSelected region to edit:\n\`\`\`\n${selectedText}\n\`\`\`\nApply the instruction to this selection while keeping the rest of the file consistent.`
+      : "";
+
     const result = await llm.generate({
       system: `You are a precise code editor. Apply the user's instruction to the file.
 Return ONLY the complete updated file content.
@@ -64,7 +71,7 @@ Preserve formatting and style unless the instruction requires changes.${rulesBlo
           role: "user",
           content: `File path: ${path}
 
-Instruction: ${instruction}
+Instruction: ${instruction}${selectionBlock}
 
 Current file content:
 ${file.content}`,
@@ -106,7 +113,31 @@ ${file.content}`,
     path: string,
     content: string
   ) {
-    const saved = await vfsService.writeFile(projectId, userId, path, content);
+    const project = await projectService.get(projectId, userId);
+    const useChangeset =
+      project.status === "ready" || project.status === "failed";
+
+    if (useChangeset) {
+      await pendingChangesetService.stageWrites(projectId, userId, [
+        { path, content },
+      ]);
+      await analyticsService.track(
+        WorkspaceMetricEvents.AI_EDITS_APPLIED,
+        userId,
+        projectId,
+        { path, pendingReview: true }
+      );
+      return {
+        path,
+        content,
+        version: null,
+        pendingReview: true,
+      };
+    }
+
+    const saved = await vfsService.writeFile(projectId, userId, path, content, {
+      source: "ai_edit",
+    });
     await analyticsService.track(
       WorkspaceMetricEvents.AI_EDITS_APPLIED,
       userId,

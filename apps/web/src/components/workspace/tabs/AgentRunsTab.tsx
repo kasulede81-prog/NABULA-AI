@@ -21,17 +21,34 @@ type AgentRun = {
   completedAt: string | null;
 };
 
+type QueueJob = {
+  id: string;
+  kind: string;
+  status: string;
+  priority: number;
+  waitForIdle: boolean;
+  errorMessage: string | null;
+  createdAt: string;
+};
+
 export function AgentRunsTab({ projectId }: { projectId: string }) {
   const [runs, setRuns] = useState<AgentRun[]>([]);
+  const [queue, setQueue] = useState<QueueJob[]>([]);
+  const [queuePending, setQueuePending] = useState(0);
   const [active, setActive] = useState(false);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const res = await api.listAgentRuns(projectId);
-      setRuns(res.data);
-      setActive(res.active);
+      const [runsRes, queueRes] = await Promise.all([
+        api.listAgentRuns(projectId),
+        api.listAgentQueue(projectId),
+      ]);
+      setRuns(runsRes.data);
+      setActive(runsRes.active);
+      setQueue(queueRes.data);
+      setQueuePending(queueRes.pending);
     } finally {
       setLoading(false);
     }
@@ -67,9 +84,14 @@ export function AgentRunsTab({ projectId }: { projectId: string }) {
         <div>
           <h2 className="text-lg font-semibold">Agent runs</h2>
           <p className="text-sm text-muted-foreground">
-            Background clarifier and builder tasks
+            Background queue, clarifier, and builder tasks
           </p>
         </div>
+        {queuePending > 0 && (
+          <span className="rounded-full bg-primary/15 px-2.5 py-1 text-xs text-primary">
+            {queuePending} queued
+          </span>
+        )}
         {active && (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-warning/15 px-2.5 py-1 text-xs text-warning">
             <Loader2 className="h-3 w-3 animate-spin" />
@@ -77,6 +99,29 @@ export function AgentRunsTab({ projectId }: { projectId: string }) {
           </span>
         )}
       </div>
+      {queue.length > 0 && (
+        <div className="mb-4 rounded-lg border border-border bg-card/30 p-3">
+          <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+            Task queue
+          </h3>
+          <div className="space-y-1">
+            {queue.slice(0, 5).map((job) => (
+              <div
+                key={job.id}
+                className="flex items-center justify-between text-xs"
+              >
+                <span className="capitalize text-foreground">{job.kind}</span>
+                <span className="text-muted-foreground">
+                  {job.status}
+                  {job.priority > 0 ? " · priority" : ""}
+                  {job.waitForIdle ? " · wait idle" : ""}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="scrollbar-thin flex-1 space-y-2 overflow-y-auto">
         {runs.length === 0 && (
           <p className="text-sm text-muted-foreground">No agent runs yet.</p>

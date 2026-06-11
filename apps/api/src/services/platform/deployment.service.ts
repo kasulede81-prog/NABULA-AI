@@ -1,6 +1,9 @@
 import { prisma } from "../../lib/prisma";
 import { env } from "../../config/env";
 import { decryptSecret } from "../../lib/token-crypto";
+import { vercelDeployService } from "./vercel-deploy.service";
+import { netlifyDeployService } from "./netlify-deploy.service";
+import { notificationService } from "../notification.service";
 
 type DeployStatus =
   | "queued"
@@ -85,7 +88,13 @@ export class DeploymentService {
     });
 
     setImmediate(() => {
-      this.runDeployment(deployment.id, projectId, target).catch((err) => {
+      this.runDeployment(
+        deployment.id,
+        projectId,
+        userId,
+        target,
+        envSnapshot
+      ).catch((err) => {
         console.error(`[deploy] Failed for ${deployment.id}:`, err);
       });
     });
@@ -96,7 +105,9 @@ export class DeploymentService {
   private async runDeployment(
     deploymentId: string,
     projectId: string,
-    target: DeployTarget
+    userId: string,
+    target: DeployTarget,
+    envSnapshot: Record<string, string>
   ) {
     const project = await prisma.project.findUnique({
       where: { id: projectId },
@@ -118,50 +129,190 @@ export class DeploymentService {
       return;
     }
 
+    if (target === "vercel" && vercelDeployService.isConfigured()) {
+      await this.deployToVercel(
+        deploymentId,
+        projectId,
+        userId,
+        project.name,
+        project.slug,
+        envSnapshot
+      );
+      return;
+    }
+
+    if (target === "netlify" && netlifyDeployService.isConfigured()) {
+      await this.deployToNetlify(
+        deploymentId,
+        projectId,
+        userId,
+        project.name,
+        project.slug
+      );
+      return;
+    }
+
     const fileCount = await prisma.file.count({ where: { projectId } });
 
-    if (target === "vercel" && env.VERCEL_TOKEN) {
+    if (target === "vercel" && !env.VERCEL_TOKEN) {
       await this.appendLog(
         deploymentId,
         "building",
-        `Preparing ${fileCount} files for Vercel`
-      );
-      await this.appendLog(
-        deploymentId,
-        "deploying",
-        "Vercel integration is not fully configured — using simulated deploy",
+        `Preparing ${fileCount} files — VERCEL_TOKEN not configured`,
         "warn"
       );
-    } else if (target === "netlify" && env.NETLIFY_TOKEN) {
+    } else if (target === "netlify" && !env.NETLIFY_TOKEN) {
       await this.appendLog(
         deploymentId,
         "building",
-        `Preparing ${fileCount} files for Netlify`
-      );
-      await this.appendLog(
-        deploymentId,
-        "deploying",
-        "Netlify integration is not fully configured — using simulated deploy",
-        "warn"
-      );
-    } else if (
-      (target === "vercel" && !env.VERCEL_TOKEN) ||
-      (target === "netlify" && !env.NETLIFY_TOKEN)
-    ) {
-      await this.appendLog(
-        deploymentId,
-        "building",
-        `${target.toUpperCase()}_TOKEN not configured — simulated deploy`,
+        `NETLIFY_TOKEN not configured — simulated deploy`,
         "warn"
       );
     }
 
-    await this.simulateDeploy(deploymentId, projectId, project.name, project.slug);
+    await this.simulateDeploy(
+      deploymentId,
+      projectId,
+      userId,
+      project.name,
+      project.slug
+    );
+  }
+
+  private async deployToVercel(
+    deploymentId: string,
+    projectId: string,
+    userId: string,
+    projectName: string,
+    slug: string,
+    envSnapshot: Record<string, string>
+  ) {
+    const files = await prisma.file.findMany({
+      where: { projectId },
+      select: { path: true, content: true },
+    });
+
+    await this.appendLog(
+      deploymentId,
+      "building",
+      `Uploading ${files.length} files to Vercel`
+    );
+    await this.appendLog(deploymentId, "deploying", "Creating Vercel deployment");
+
+    try {
+      const result = await vercelDeployService.deployProject(
+        slug || projectName,
+        files,
+        envSnapshot
+      );
+
+      await this.appendLog(
+        deploymentId,
+        "ready",
+        `Live at ${result.url}`,
+        "ok"
+      );
+
+      await prisma.deployment.update({
+        where: { id: deploymentId },
+        data: { url: result.url, status: "ready" },
+      });
+
+      await prisma.project.update({
+        where: { id: projectId },
+        data: { previewUrl: result.url },
+      });
+
+      void notificationService
+        .create(projectId, userId, {
+          type: "deploy.ready",
+          title: "Deployment live",
+          body: result.url,
+          metadata: {
+            deploymentId,
+            vercelDeploymentId: result.deploymentId,
+            url: result.url,
+          },
+        })
+        .catch(() => undefined);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Vercel deploy failed";
+      await this.appendLog(deploymentId, "error", msg, "error");
+      await prisma.deployment.update({
+        where: { id: deploymentId },
+        data: { status: "error", error: msg },
+      });
+    }
+  }
+
+  private async deployToNetlify(
+    deploymentId: string,
+    projectId: string,
+    userId: string,
+    projectName: string,
+    slug: string
+  ) {
+    const files = await prisma.file.findMany({
+      where: { projectId },
+      select: { path: true, content: true },
+    });
+
+    await this.appendLog(
+      deploymentId,
+      "building",
+      `Uploading ${files.length} files to Netlify`
+    );
+    await this.appendLog(deploymentId, "deploying", "Creating Netlify deployment");
+
+    try {
+      const result = await netlifyDeployService.deployProject(
+        slug || projectName,
+        files
+      );
+
+      await this.appendLog(
+        deploymentId,
+        "ready",
+        `Live at ${result.url}`,
+        "ok"
+      );
+
+      await prisma.deployment.update({
+        where: { id: deploymentId },
+        data: { url: result.url, status: "ready", externalId: result.deploymentId },
+      });
+
+      await prisma.project.update({
+        where: { id: projectId },
+        data: { previewUrl: result.url },
+      });
+
+      void notificationService
+        .create(projectId, userId, {
+          type: "deploy.ready",
+          title: "Deployment live",
+          body: result.url,
+          metadata: {
+            deploymentId,
+            netlifyDeploymentId: result.deploymentId,
+            url: result.url,
+          },
+        })
+        .catch(() => undefined);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Netlify deploy failed";
+      await this.appendLog(deploymentId, "error", msg, "error");
+      await prisma.deployment.update({
+        where: { id: deploymentId },
+        data: { status: "error", error: msg },
+      });
+    }
   }
 
   private async simulateDeploy(
     deploymentId: string,
     projectId: string,
+    userId: string,
     projectName: string,
     slug: string
   ) {
@@ -197,6 +348,15 @@ export class DeploymentService {
       where: { id: projectId },
       data: { previewUrl: url },
     });
+
+    void notificationService
+      .create(projectId, userId, {
+        type: "deploy.ready",
+        title: "Deployment live",
+        body: url,
+        metadata: { deploymentId, url, simulated: true },
+      })
+      .catch(() => undefined);
   }
 
   list(projectId: string, limit = 30) {

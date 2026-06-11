@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Build shared package
+        run: pnpm --filter @nebula/shared build
+
+      - name: Typecheck API
+        run: pnpm --filter @nebula/api exec tsc --noEmit
+
+      - name: Typecheck Web
+        run: pnpm --filter @nebula/web exec tsc --noEmit
+
+      - name: Typecheck database package
+        run: pnpm --filter @nebula/database exec tsc --noEmit
+
+      - name: Verify production foundation
+        run: pnpm verify:production-foundation
+        env:
+          DATABASE_URL: postgresql://nebula:nebula_dev@localhost:5432/nebula_ai
+          DIRECT_URL: postgresql://nebula:nebula_dev@localhost:5432/nebula_ai
+          JWT_SECRET: ci-test-jwt-secret-minimum-32-chars-long
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: test-anon-key
+          SUPABASE_SERVICE_ROLE_KEY: test-service-role-key

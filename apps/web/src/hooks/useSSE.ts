@@ -20,10 +20,11 @@ export function useSSE(projectId: string | null) {
   useEffect(() => {
     if (!projectId) return;
 
+    const apiBase =
+      process.env.NEXT_PUBLIC_API_URL ??
+      (typeof window !== "undefined" ? "/api" : "http://localhost:3001/v1");
+    const url = `${apiBase}/projects/${projectId}/events`;
     const token = api.getToken();
-    if (!token) return;
-
-    const url = `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/v1"}/projects/${projectId}/events`;
 
     // EventSource doesn't support custom headers — use fetch-based SSE polyfill
     const controller = new AbortController();
@@ -31,8 +32,11 @@ export function useSSE(projectId: string | null) {
 
     async function connect() {
       try {
+        const headers: Record<string, string> = {};
+        if (token) headers.Authorization = `Bearer ${token}`;
         const res = await fetch(url, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers,
+          credentials: "include",
           signal: controller.signal,
         });
 

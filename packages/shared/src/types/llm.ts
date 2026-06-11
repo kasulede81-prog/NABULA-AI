@@ -1,5 +1,6 @@
 export type LLMContentBlock =
   | { type: "text"; text: string }
+  | { type: "image"; mediaType: string; data: string }
   | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
   | { type: "tool_result"; tool_use_id: string; content: string };
 
@@ -52,7 +53,7 @@ export interface LLMStreamChunk {
   outputTokens?: number;
 }
 
-export type LLMProviderId = "anthropic" | "deepseek";
+export type LLMProviderId = "anthropic" | "deepseek" | "openai" | "gemini";
 
 /** Pluggable LLM provider interface (Anthropic Claude, DeepSeek). */
 export interface LLMProvider {

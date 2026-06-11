@@ -165,7 +165,48 @@ export class ProjectPlatformService {
     if (!row) {
       throw new PlatformError("NOT_FOUND", "Domain not found", 404);
     }
-    // Simulated DNS verification — marks active for demo parity with Lovable mock
+
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { previewUrl: true },
+    });
+
+    const dns = await import("node:dns/promises");
+    const targetHost = project?.previewUrl
+      ? new URL(
+          project.previewUrl.startsWith("http")
+            ? project.previewUrl
+            : `https://${project.previewUrl}`
+        ).hostname
+      : null;
+
+    let verified = false;
+    try {
+      const [aRecords, cnameRecords] = await Promise.all([
+        dns.resolve4(row.host).catch(() => [] as string[]),
+        dns.resolveCname(row.host).catch(() => [] as string[]),
+      ]);
+      if (targetHost) {
+        verified =
+          cnameRecords.some((c) => c === targetHost || c.endsWith(`.${targetHost}`)) ||
+          aRecords.length > 0;
+      } else {
+        verified = aRecords.length > 0 || cnameRecords.length > 0;
+      }
+    } catch {
+      verified = false;
+    }
+
+    if (!verified) {
+      throw new PlatformError(
+        "DNS_NOT_VERIFIED",
+        targetHost
+          ? `Point ${row.host} CNAME to ${targetHost} or configure A records`
+          : `DNS records not found for ${row.host}`,
+        422
+      );
+    }
+
     return prisma.projectDomain.update({
       where: { id: domainId },
       data: { status: "active" },

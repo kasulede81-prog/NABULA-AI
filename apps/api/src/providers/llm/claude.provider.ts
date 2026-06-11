@@ -7,11 +7,36 @@ import {
 import type {
   LLMGenerateOptions,
   LLMGenerateResult,
+  LLMMessage,
   LLMProvider,
   LLMStreamChunk,
   LLMToolCall,
 } from "@nebula/shared";
 import { env } from "../../config/env";
+
+type AnthropicMessageContent =
+  Anthropic.MessageCreateParams["messages"][0]["content"];
+
+function toAnthropicContent(m: LLMMessage): AnthropicMessageContent {
+  if (typeof m.content === "string") return m.content;
+  return m.content.map((block) => {
+    if (block.type === "image") {
+      return {
+        type: "image" as const,
+        source: {
+          type: "base64" as const,
+          media_type: block.mediaType as
+            | "image/png"
+            | "image/jpeg"
+            | "image/webp"
+            | "image/gif",
+          data: block.data,
+        },
+      };
+    }
+    return block;
+  }) as AnthropicMessageContent;
+}
 
 function wrapAnthropicError(err: unknown): AgentError {
   if (err instanceof AgentError) return err;
@@ -74,7 +99,7 @@ export class ClaudeProvider implements LLMProvider {
         system: options.system,
         messages: options.messages.map((m) => ({
           role: m.role,
-          content: m.content as Anthropic.MessageCreateParams["messages"][0]["content"],
+          content: toAnthropicContent(m),
         })),
         tools: options.tools?.map((t) => ({
           name: t.name,
@@ -120,7 +145,7 @@ export class ClaudeProvider implements LLMProvider {
         system: options.system,
         messages: options.messages.map((m) => ({
           role: m.role,
-          content: m.content as Anthropic.MessageCreateParams["messages"][0]["content"],
+          content: toAnthropicContent(m),
         })),
       });
 

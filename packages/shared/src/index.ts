@@ -7,6 +7,7 @@ export * from "./schemas/spec";
 export * from "./validation/build-validation";
 export * from "./validation/build-manifest";
 export * from "./constants/events";
+export * from "./constants/project-templates";
 export * from "./constants/support";
 export * from "./types/preview";
 export * from "./constants/llm-cost";

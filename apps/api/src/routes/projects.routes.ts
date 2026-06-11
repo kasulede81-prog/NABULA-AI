@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { createProjectSchema, updateProjectSchema } from "@nebula/shared";
+import { createProjectSchema, updateProjectSchema, PROJECT_TEMPLATES } from "@nebula/shared";
 import { parseCursorQuery } from "../lib/cursor-pagination";
 import { projectService, ProjectError } from "../services/project.service";
 import { authenticate, type AuthenticatedRequest } from "../middleware/auth";
@@ -7,6 +7,10 @@ import { requireQuota, consumeQuota } from "../middleware/quota";
 import { QuotaExceededError } from "../services/billing/billing.service";
 
 export async function projectRoutes(app: FastifyInstance) {
+  app.get("/projects/templates", async (_request, reply) => {
+    return reply.send({ data: PROJECT_TEMPLATES });
+  });
+
   app.addHook("preHandler", authenticate);
 
   app.get("/projects", async (request) => {

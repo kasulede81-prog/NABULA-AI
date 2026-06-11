@@ -19,6 +19,7 @@ import {
   type AppSpec,
 } from "@nebula/shared";
 import { prisma } from "../lib/prisma";
+import { env } from "../config/env";
 import { getActiveLLMProviderId } from "../config/llm-provider";
 import { resolveLLMProvider } from "../providers/llm";
 import type { LLMMessage, LLMToolDefinition } from "@nebula/shared";
@@ -27,6 +28,12 @@ import { eventService } from "./event.service";
 import { vfsService } from "./vfs.service";
 import { projectService } from "./project.service";
 import { getProjectRulesBlock } from "./message-context.service";
+import { pendingChangesetService } from "./pending-changeset.service";
+import { notificationService } from "./notification.service";
+import { autoPreviewService } from "./auto-preview.service";
+import { emailService } from "./email.service";
+import { reviewerService } from "./reviewer.service";
+import { streamAssistantMessage } from "../lib/stream-message";
 import { assertBuildNotCancelled } from "../lib/build-cancel";
 import type { LLMProviderId } from "@nebula/shared";
 
@@ -40,6 +47,17 @@ const BUILDER_TOOLS: LLMToolDefinition[] = [
     name: "list_files",
     description: "List all file paths in the project (paths only, no content)",
     inputSchema: { type: "object", properties: {}, required: [] },
+  },
+  {
+    name: "search_files",
+    description: "Search project files and symbols by query string",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search term" },
+      },
+      required: ["query"],
+    },
   },
   {
     name: "read_file",
@@ -128,8 +146,10 @@ export class BuilderService {
       errorContext?: string;
       attempt?: number;
       llmProvider?: LLMProviderId;
+      deferWrites?: boolean;
     } = {}
   ) {
+    const deferWrites = options.deferWrites ?? false;
     const project = await projectService.get(projectId, userId);
 
     if (!project.specJson) {
@@ -271,7 +291,14 @@ export class BuilderService {
             });
 
             try {
-              await this.executeTool(projectId, userId, call.name, call.input, changedPaths);
+              await this.executeTool(
+                projectId,
+                userId,
+                call.name,
+                call.input,
+                changedPaths,
+                deferWrites
+              );
             } catch (toolErr) {
               const code = getErrorCode(toolErr);
               const toolMsg =
@@ -347,9 +374,111 @@ export class BuilderService {
         }
       }
 
+      const buildDurationMs = Date.now() - buildStartedAt;
+      const pendingProposal = deferWrites
+        ? await pendingChangesetService.getProposal(projectId)
+        : [];
+
+      if (deferWrites && pendingProposal.length > 0) {
+        const paths = await pendingChangesetService.listMergedPaths(
+          projectId,
+          userId
+        );
+        const metrics = {
+          toolCalls: toolCallCount,
+          filesGenerated: pendingProposal.length,
+          buildDurationMs,
+        };
+
+        const readyValidation = validateBuildReady({ paths, spec });
+        if (!readyValidation.ok) {
+          await pendingChangesetService.discard(projectId);
+          const reason = readyValidation.errors.join("; ");
+          throw new AgentError(
+            NonRetryableErrorCodes.BUILD_INCOMPLETE,
+            reason,
+            422,
+            false
+          );
+        }
+
+        await prisma.project.update({
+          where: { id: projectId },
+          data: { status: "ready" },
+        });
+
+        const summary = `Proposed ${pendingProposal.length} file change${pendingProposal.length === 1 ? "" : "s"} for review (${toolCallCount} tool calls)`;
+        await agentRunService.complete(
+          run.id,
+          summary,
+          totalInput,
+          totalOutput,
+          metrics
+        );
+
+        eventService.publish(projectId, SseEvents.CHANGESET_PROPOSED, {
+          runId: run.id,
+          fileCount: pendingProposal.length,
+          files: pendingProposal,
+        });
+
+        void notificationService
+          .create(projectId, userId, {
+            type: "changeset.proposed",
+            title: "Changes ready for review",
+            body: `${pendingProposal.length} file change${pendingProposal.length === 1 ? "" : "s"} proposed`,
+            metadata: { runId: run.id, fileCount: pendingProposal.length },
+          })
+          .catch(() => undefined);
+
+        eventService.publish(projectId, SseEvents.BUILD_COMPLETED, {
+          runId: run.id,
+          fileCount: pendingProposal.length,
+          toolCalls: toolCallCount,
+          buildDurationMs,
+          attempt,
+          pendingReview: true,
+        });
+
+        eventService.publish(projectId, SseEvents.AGENT_COMPLETED, {
+          agentType: "builder",
+          runId: run.id,
+          fileCount: pendingProposal.length,
+        });
+
+        eventService.publish(projectId, SseEvents.PROJECT_UPDATED, {
+          id: projectId,
+          status: "ready",
+        });
+
+        eventService.publish(projectId, SseEvents.PROGRESS, {
+          step: "changeset_proposed",
+          message: `${pendingProposal.length} file change${pendingProposal.length === 1 ? "" : "s"} ready for review`,
+        });
+
+        await streamAssistantMessage(
+          projectId,
+          `I've prepared changes to ${pendingProposal.length} file${pendingProposal.length === 1 ? "" : "s"}. Review the diff and apply when ready.`,
+          (text) =>
+            prisma.message.create({
+              data: { projectId, role: "assistant", content: text },
+              select: { id: true, role: true, content: true, createdAt: true },
+            })
+        );
+
+        return {
+          fileCount: pendingProposal.length,
+          files: pendingProposal,
+          toolCalls: toolCallCount,
+          buildDurationMs,
+          tokensInput: totalInput,
+          tokensOutput: totalOutput,
+          pendingReview: true,
+        };
+      }
+
       const finalFiles = await vfsService.listTree(projectId, userId);
       const paths = finalFiles.map((f) => f.path);
-      const buildDurationMs = Date.now() - buildStartedAt;
 
       const metrics = {
         toolCalls: toolCallCount,
@@ -396,6 +525,15 @@ export class BuilderService {
         attempt,
       });
 
+      void notificationService
+        .create(projectId, userId, {
+          type: "build.completed",
+          title: "Build complete",
+          body: `${finalFiles.length} files generated`,
+          metadata: { runId: run.id, fileCount: finalFiles.length },
+        })
+        .catch(() => undefined);
+
       eventService.publish(projectId, SseEvents.AGENT_COMPLETED, {
         agentType: "builder",
         runId: run.id,
@@ -412,16 +550,30 @@ export class BuilderService {
         message: `Build complete — ${finalFiles.length} files, ${toolCallCount} tool calls`,
       });
 
-      const message = await prisma.message.create({
-        data: {
-          projectId,
-          role: "assistant",
-          content: `Build complete! Generated ${finalFiles.length} files for ${spec.name} in ${(buildDurationMs / 1000).toFixed(0)}s. Check the file tree to explore your app.`,
-        },
-        select: { id: true, role: true, content: true, createdAt: true },
-      });
+      await streamAssistantMessage(
+        projectId,
+        `Build complete! Generated ${finalFiles.length} files for ${spec.name} in ${(buildDurationMs / 1000).toFixed(0)}s. Check the file tree to explore your app.`,
+        (text) =>
+          prisma.message.create({
+            data: { projectId, role: "assistant", content: text },
+            select: { id: true, role: true, content: true, createdAt: true },
+          })
+      );
 
-      eventService.publish(projectId, SseEvents.MESSAGE_CREATED, message);
+      void autoPreviewService
+        .scheduleAfterBuild(projectId, userId, "build_complete")
+        .catch(() => undefined);
+
+      reviewerService.scheduleReview(projectId, userId);
+
+      void prisma.user
+        .findUnique({ where: { id: userId }, select: { email: true } })
+        .then((u) => {
+          if (!u?.email) return;
+          const url = `${env.WEB_URL}/projects/${projectId}`;
+          return emailService.sendBuildComplete(u.email, spec.name, url);
+        })
+        .catch(() => undefined);
 
       return {
         fileCount: finalFiles.length,
@@ -455,6 +607,7 @@ export class BuilderService {
       if (!isRetryableError(err)) {
         await this.markFailed(
           projectId,
+          userId,
           run.id,
           msg,
           totalInput,
@@ -483,6 +636,7 @@ export class BuilderService {
 
   private async markFailed(
     projectId: string,
+    userId: string,
     runId: string,
     msg: string,
     totalInput: number,
@@ -512,6 +666,15 @@ export class BuilderService {
       toolCalls: metrics.toolCalls,
       buildDurationMs: metrics.buildDurationMs,
     });
+
+    void notificationService
+      .create(projectId, userId, {
+        type: "build.failed",
+        title: "Build failed",
+        body: msg.slice(0, 200),
+        metadata: { runId, errorCode: codeLabel, phase: failure.failurePhase },
+      })
+      .catch(() => undefined);
 
     eventService.publish(projectId, SseEvents.AGENT_FAILED, {
       agentType: "builder",
@@ -560,15 +723,35 @@ export class BuilderService {
     userId: string,
     name: string,
     input: Record<string, unknown>,
-    changedPaths: string[]
+    changedPaths: string[],
+    deferWrites = false
   ) {
     switch (name) {
       case "list_files": {
+        if (deferWrites) {
+          const paths = await pendingChangesetService.listMergedPaths(
+            projectId,
+            userId
+          );
+          return paths.map((path) => ({ path, version: null }));
+        }
         const files = await vfsService.listTree(projectId, userId);
         return files.map((f) => ({ path: f.path, version: f.version }));
       }
+      case "search_files": {
+        const query = String(input.query ?? "").trim();
+        if (!query) return [];
+        return vfsService.searchFiles(projectId, userId, query, 20);
+      }
       case "read_file": {
         const validated = this.validateToolPath(input.path);
+        if (deferWrites) {
+          return pendingChangesetService.readMergedFile(
+            projectId,
+            userId,
+            validated
+          );
+        }
         return vfsService.readFile(projectId, userId, validated);
       }
       case "write_files": {
@@ -604,7 +787,11 @@ export class BuilderService {
           path: this.validateToolPath(f.path),
           content: f.content,
         }));
-        const result = await vfsService.writeFiles(projectId, userId, validated);
+        const result = deferWrites
+          ? await pendingChangesetService.stageWrites(projectId, userId, validated)
+          : await vfsService.writeFiles(projectId, userId, validated, {
+              source: "agent",
+            });
         for (const path of result.written) {
           if (!changedPaths.includes(path)) changedPaths.push(path);
         }
@@ -621,7 +808,13 @@ export class BuilderService {
             false
           );
         }
-        const result = await vfsService.writeFile(projectId, userId, validated, content);
+        const result = deferWrites
+          ? await pendingChangesetService.stageWrites(projectId, userId, [
+              { path: validated, content },
+            ])
+          : await vfsService.writeFile(projectId, userId, validated, content, {
+              source: "agent",
+            });
         if (!changedPaths.includes(validated)) changedPaths.push(validated);
         return result;
       }

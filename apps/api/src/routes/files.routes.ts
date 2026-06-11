@@ -7,6 +7,10 @@ import {
   WorkspaceMetricEvents,
 } from "../services/analytics.service";
 import { aiEditService, AiEditError, aiEditSchema } from "../services/ai-edit.service";
+import {
+  tabCompletionService,
+  tabCompletionSchema,
+} from "../services/tab-completion.service";
 import { projectService, ProjectError } from "../services/project.service";
 import { authenticate, type AuthenticatedRequest } from "../middleware/auth";
 
@@ -65,7 +69,14 @@ export async function fileRoutes(app: FastifyInstance) {
     }
 
     try {
-      const file = await vfsService.readFile(projectId, userId, filePath);
+      const { version } = request.query as { version?: string };
+      const versionNum = version ? Number.parseInt(version, 10) : undefined;
+      const file = await vfsService.readFile(
+        projectId,
+        userId,
+        filePath,
+        Number.isFinite(versionNum) ? versionNum : undefined
+      );
       await analyticsService.track(
         WorkspaceMetricEvents.FILES_OPENED,
         userId,
@@ -170,7 +181,8 @@ export async function fileRoutes(app: FastifyInstance) {
         projectId,
         userId,
         parsed.data.path,
-        parsed.data.instruction
+        parsed.data.instruction,
+        parsed.data.selectedText
       );
       return reply.send({ data: result });
     } catch (err) {
@@ -190,6 +202,34 @@ export async function fileRoutes(app: FastifyInstance) {
         });
       }
       throw err;
+    }
+  });
+
+  app.post("/projects/:projectId/files/tab-completion", async (request, reply) => {
+    const { userId } = request as AuthenticatedRequest;
+    const { projectId } = request.params as { projectId: string };
+    const parsed = tabCompletionSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: { code: "VALIDATION_ERROR", message: parsed.error.message },
+      });
+    }
+
+    try {
+      const result = await tabCompletionService.complete(
+        projectId,
+        userId,
+        parsed.data
+      );
+      return reply.send({ data: result });
+    } catch (err) {
+      if (err instanceof ProjectError) {
+        return reply.status(err.status).send({
+          error: { code: err.code, message: err.message },
+        });
+      }
+      // Completions are best-effort: never surface provider errors to the editor.
+      return reply.send({ data: { completion: "" } });
     }
   });
 

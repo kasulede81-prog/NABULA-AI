@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { BrandMark } from "@/components/brand/BrandMark";
 import { BRAND_TAGLINE } from "@/lib/brand";
+import { OAuthButtons } from "@/components/auth/OAuthButtons";
 
 export default function LoginPage() {
   const { login, error } = useAuth();
@@ -59,6 +60,9 @@ export default function LoginPage() {
             Sign in
           </Button>
         </form>
+        <div className="my-4">
+          <OAuthButtons />
+        </div>
         <p className="mt-4 text-center text-sm text-muted-foreground">
           No account?{" "}
           <Link href="/register" className="text-primary hover:underline">

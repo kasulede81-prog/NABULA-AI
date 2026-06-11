@@ -1,5 +1,6 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
 import { verifyToken } from "../lib/jwt";
+import { readSessionToken } from "../lib/session-cookie";
 import { authService } from "../services/auth.service";
 
 export interface AuthenticatedRequest extends FastifyRequest {
@@ -11,15 +12,13 @@ export async function authenticate(
   request: FastifyRequest,
   reply: FastifyReply
 ): Promise<void> {
-  const header = request.headers.authorization;
-  if (!header?.startsWith("Bearer ")) {
+  const token = readSessionToken(request);
+  if (!token) {
     reply.status(401).send({
       error: { code: "UNAUTHORIZED", message: "Missing authorization token" },
     });
     return;
   }
-
-  const token = header.slice(7);
 
   try {
     const payload = verifyToken(token);

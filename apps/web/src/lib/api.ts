@@ -1,4 +1,6 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/v1";
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ??
+  (typeof window !== "undefined" ? "/api" : "http://localhost:3001/v1");
 
 export interface ApiError {
   error: { code: string; message: string };
@@ -35,7 +37,11 @@ export class ApiClient {
     const token = this.getToken();
     if (token) headers.Authorization = `Bearer ${token}`;
 
-    const res = await fetch(`${API_URL}${path}`, { ...options, headers });
+    const res = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers,
+      credentials: "include",
+    });
 
     if (res.status === 204) return undefined as T;
 
@@ -83,6 +89,48 @@ export class ApiClient {
     });
   }
 
+  getOAuthConfig() {
+    return this.request<{
+      data: { google: string | null; github: string | null };
+    }>("/auth/oauth/config");
+  }
+
+  exchangeSupabaseToken(accessToken: string) {
+    return this.request<{
+      user: { id: string; email: string; name: string };
+      token: string;
+      expiresAt: string;
+    }>("/auth/supabase/exchange", {
+      method: "POST",
+      body: JSON.stringify({ accessToken }),
+    });
+  }
+
+  getIntegrations() {
+    return this.request<{
+      data: {
+        auth: { googleOAuth: boolean; githubOAuth: boolean };
+        llm: {
+          defaultProvider: string;
+          providers: Record<string, boolean>;
+        };
+        preview: { e2b: boolean; autoPreview: boolean };
+        deploy: { vercel: boolean; netlify: boolean };
+        github: { oauth: boolean };
+        billing: { stripe: boolean };
+        observability: { sentry: boolean; posthog: boolean };
+        email: { resend: boolean };
+        infra: { redis: boolean; fileStorageBackend: string; supabaseStorage: boolean };
+        agents: {
+          reviewer: boolean;
+          bugbot: boolean;
+          tabAutocomplete: boolean;
+          webSearch: boolean;
+        };
+      };
+    }>("/integrations");
+  }
+
   logout() {
     return this.request<void>("/auth/logout", { method: "POST" });
   }
@@ -124,6 +172,7 @@ export class ApiClient {
         creditsRemaining: number;
         renewsAt: string | null;
         priorityQueue: boolean;
+        stripeConfigured?: boolean;
         limits: {
           monthlyProjects: number | null;
           dailyAiRequests: number | null;
@@ -558,8 +607,10 @@ export class ApiClient {
     projectId: string,
     content: string,
     opts?: {
-      llmProvider?: "anthropic" | "deepseek";
+      llmProvider?: "anthropic" | "deepseek" | "openai" | "gemini";
       attachedFiles?: string[];
+      chatMode?: "ask" | "agent" | "composer";
+      images?: Array<{ mediaType: string; data: string }>;
     }
   ) {
     return this.request<{
@@ -573,8 +624,39 @@ export class ApiClient {
         content,
         llmProvider: opts?.llmProvider,
         attachedFiles: opts?.attachedFiles,
+        chatMode: opts?.chatMode,
+        images: opts?.images,
       }),
     });
+  }
+
+  listProjectNotifications(projectId: string) {
+    return this.request<{
+      data: Array<{
+        id: string;
+        type: string;
+        title: string;
+        body: string;
+        read: boolean;
+        metadata: Record<string, unknown>;
+        createdAt: string;
+      }>;
+      unread: number;
+    }>(`/projects/${projectId}/notifications`);
+  }
+
+  markProjectNotificationRead(projectId: string, notificationId: string) {
+    return this.request<{ ok: boolean }>(
+      `/projects/${projectId}/notifications/${notificationId}/read`,
+      { method: "POST" }
+    );
+  }
+
+  markAllProjectNotificationsRead(projectId: string) {
+    return this.request<{ ok: boolean }>(
+      `/projects/${projectId}/notifications/read-all`,
+      { method: "POST" }
+    );
   }
 
   listLlmProviders() {
@@ -599,8 +681,89 @@ export class ApiClient {
   searchProjectFiles(projectId: string, q: string) {
     const params = new URLSearchParams({ q });
     return this.request<{
-      data: Array<{ path: string; snippet: string }>;
+      data: Array<{
+        path: string;
+        snippet: string;
+        kind?: "file" | "symbol";
+        symbol?: string;
+        line?: number;
+      }>;
     }>(`/projects/${projectId}/files/search?${params}`);
+  }
+
+  listCodeSymbols(projectId: string, q?: string) {
+    const params = q ? new URLSearchParams({ q }) : "";
+    const suffix = params ? `?${params}` : "";
+    return this.request<{
+      data: Array<{
+        path: string;
+        kind: string;
+        name: string;
+        line: number;
+        column: number;
+      }>;
+    }>(`/projects/${projectId}/symbols${suffix}`);
+  }
+
+  semanticCodebaseSearch(projectId: string, q: string, limit = 10) {
+    const params = new URLSearchParams({ q, limit: String(limit) });
+    return this.request<{
+      data: Array<{
+        path: string;
+        score: number;
+        reason: string;
+        snippet: string;
+      }>;
+    }>(`/projects/${projectId}/codebase/search?${params}`);
+  }
+
+  reindexCodebase(projectId: string) {
+    return this.request<{ indexed: number }>(
+      `/projects/${projectId}/codebase/reindex`,
+      { method: "POST" }
+    );
+  }
+
+  listProjectSnapshots(projectId: string) {
+    return this.request<{
+      branch: string;
+      data: Array<{
+        id: string;
+        createdAt: string;
+        source: string;
+        fileCount: number;
+        paths: string[];
+      }>;
+    }>(`/projects/${projectId}/history/snapshots`);
+  }
+
+  listProjectHistory(projectId: string) {
+    return this.request<{
+      data: Array<{
+        path: string;
+        version: number;
+        source: string;
+        createdAt: string;
+      }>;
+    }>(`/projects/${projectId}/history`);
+  }
+
+  restoreFileVersion(projectId: string, path: string, version: number) {
+    return this.request<{ path: string; version: number }>(
+      `/projects/${projectId}/files/${path}/restore`,
+      {
+        method: "POST",
+        body: JSON.stringify({ version }),
+      }
+    );
+  }
+
+  getTerminalWsUrl(projectId: string) {
+    const token = this.getToken() ?? "";
+    const httpBase = API_URL.replace(/\/v1\/?$/, "");
+    const wsBase = httpBase.replace(/^http/, "ws");
+    const params = new URLSearchParams({ token });
+    return `${wsBase}/v1/projects/${projectId}/preview/terminal?${params}`;
   }
 
   listAgentRuns(projectId: string) {
@@ -640,6 +803,85 @@ export class ApiClient {
     });
   }
 
+  listAgentQueue(projectId: string) {
+    return this.request<{
+      data: Array<{
+        id: string;
+        kind: string;
+        status: string;
+        priority: number;
+        waitForIdle: boolean;
+        errorMessage: string | null;
+        createdAt: string;
+        startedAt: string | null;
+        completedAt: string | null;
+      }>;
+      pending: number;
+    }>(`/projects/${projectId}/agent-queue`);
+  }
+
+  getMcpConfig(projectId: string) {
+    return this.request<{
+      data: {
+        allowWrites: boolean;
+        servers: Array<{
+          id: string;
+          name: string;
+          url?: string;
+          enabled: boolean;
+        }>;
+        builtinTools: Array<{ name: string; description: string }>;
+        externalTools?: Array<{ name: string; description: string }>;
+      };
+    }>(`/projects/${projectId}/mcp`);
+  }
+
+  updateMcpConfig(
+    projectId: string,
+    body: {
+      servers: Array<{
+        id: string;
+        name: string;
+        url?: string;
+        enabled: boolean;
+      }>;
+      allowWrites?: boolean;
+    }
+  ) {
+    return this.request<{ data: unknown }>(`/projects/${projectId}/mcp`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+  }
+
+  invokeMcp(
+    projectId: string,
+    body: {
+      jsonrpc: string;
+      id: number | string;
+      method: string;
+      params?: Record<string, unknown>;
+    }
+  ) {
+    return this.request<unknown>(`/projects/${projectId}/mcp`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  createStripeCheckout() {
+    return this.request<{ data: { url: string; sessionId: string } }>(
+      "/billing/checkout",
+      { method: "POST" }
+    );
+  }
+
+  createStripePortal() {
+    return this.request<{ data: { url: string } }>("/billing/portal", {
+      method: "POST",
+    });
+  }
+
   async listFiles(projectId: string) {
     const data = await this.fetchAllCursorPages<{
       path: string;
@@ -654,12 +896,14 @@ export class ApiClient {
     return { data };
   }
 
-  readFile(projectId: string, path: string) {
+  readFile(projectId: string, path: string, version?: number) {
+    const params =
+      version != null ? `?version=${encodeURIComponent(String(version))}` : "";
     return this.request<{
       path: string;
       content: string;
       version: number;
-    }>(`/projects/${projectId}/files/${path}`);
+    }>(`/projects/${projectId}/files/${path}${params}`);
   }
 
   writeFile(projectId: string, path: string, content: string) {
@@ -878,6 +1122,22 @@ export class ApiClient {
     }>(`/projects/${projectId}/github/sync`, { method: "POST" });
   }
 
+  createGithubPullRequest(
+    projectId: string,
+    body?: { title?: string; body?: string }
+  ) {
+    return this.request<{
+      data: {
+        pullRequestUrl: string;
+        pullRequestNumber: number;
+        branch: string;
+      };
+    }>(`/projects/${projectId}/github/pull-request`, {
+      method: "POST",
+      body: JSON.stringify(body ?? {}),
+    });
+  }
+
   getGithubExport(projectId: string) {
     return this.request<{
       data: {
@@ -949,7 +1209,12 @@ export class ApiClient {
     });
   }
 
-  proposeAiEdit(projectId: string, path: string, instruction: string) {
+  proposeAiEdit(
+    projectId: string,
+    path: string,
+    instruction: string,
+    opts?: { selectedText?: string }
+  ) {
     return this.request<{
       data: {
         path: string;
@@ -960,12 +1225,128 @@ export class ApiClient {
       };
     }>(`/projects/${projectId}/files/ai-edit`, {
       method: "POST",
-      body: JSON.stringify({ path, instruction }),
+      body: JSON.stringify({
+        path,
+        instruction,
+        selectedText: opts?.selectedText,
+      }),
+    });
+  }
+
+  getChangeset(projectId: string) {
+    return this.request<{
+      pending: boolean;
+      fileCount: number;
+      files: Array<{
+        path: string;
+        previousContent: string;
+        newContent: string;
+      }>;
+    }>(`/projects/${projectId}/changeset`);
+  }
+
+  applyChangeset(projectId: string, paths?: string[]) {
+    return this.request<{ applied: number; paths: string[] }>(
+      `/projects/${projectId}/changeset/apply`,
+      {
+        method: "POST",
+        body: JSON.stringify(paths && paths.length > 0 ? { paths } : {}),
+      }
+    );
+  }
+
+  discardChangeset(projectId: string, paths?: string[]) {
+    return this.request<{ discarded: number }>(
+      `/projects/${projectId}/changeset/discard`,
+      {
+        method: "POST",
+        body: JSON.stringify(paths && paths.length > 0 ? { paths } : {}),
+      }
+    );
+  }
+
+  updateChangesetEntry(projectId: string, path: string, content: string) {
+    return this.request<{ path: string }>(
+      `/projects/${projectId}/changeset/update`,
+      {
+        method: "POST",
+        body: JSON.stringify({ path, content }),
+      }
+    );
+  }
+
+  tabCompletion(
+    projectId: string,
+    input: {
+      path: string;
+      prefix: string;
+      suffix: string;
+      language?: string;
+      recentEdits?: string;
+    }
+  ) {
+    return this.request<{ data: { completion: string } }>(
+      `/projects/${projectId}/files/tab-completion`,
+      { method: "POST", body: JSON.stringify(input) }
+    );
+  }
+
+  stageChangesetEntry(projectId: string, path: string, content: string) {
+    return this.request<{ written: string[] }>(
+      `/projects/${projectId}/changeset/stage`,
+      { method: "POST", body: JSON.stringify({ path, content }) }
+    );
+  }
+
+  aiTerminalCommand(projectId: string, instruction: string) {
+    return this.request<{ data: { command: string } }>(
+      `/projects/${projectId}/ai/terminal-command`,
+      { method: "POST", body: JSON.stringify({ instruction }) }
+    );
+  }
+
+  aiQuickFix(
+    projectId: string,
+    input: {
+      path: string;
+      content: string;
+      errors: Array<{ line: number; message: string }>;
+    }
+  ) {
+    return this.request<{ data: { content: string } }>(
+      `/projects/${projectId}/ai/quick-fix`,
+      { method: "POST", body: JSON.stringify(input) }
+    );
+  }
+
+  restoreCheckpoint(projectId: string, at: string) {
+    return this.request<{
+      restored: number;
+      deleted: number;
+      paths: string[];
+    }>(`/projects/${projectId}/restore`, {
+      method: "POST",
+      body: JSON.stringify({ at }),
+    });
+  }
+
+  getUserRules() {
+    return this.request<{ agentRules: string | null }>("/users/me/rules");
+  }
+
+  updateUserRules(agentRules: string | null) {
+    return this.request<{ agentRules: string | null }>("/users/me/rules", {
+      method: "PATCH",
+      body: JSON.stringify({ agentRules }),
     });
   }
 
   applyAiEdit(projectId: string, path: string, content: string) {
-    return this.request<{ path: string; version: number }>(
+    return this.request<{
+      path: string;
+      version: number | null;
+      pendingReview?: boolean;
+    }>(
       `/projects/${projectId}/files/ai-edit/apply`,
       {
         method: "POST",

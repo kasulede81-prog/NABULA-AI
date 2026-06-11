@@ -2,16 +2,15 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import type { LlmProviderId } from "@nebula/shared";
 
 const STORAGE_KEY = "nebula_llm_provider";
 
 export function useLlmProvider(projectId: string) {
   const [providers, setProviders] = useState<
-    Array<{ id: "anthropic" | "deepseek"; label: string; default?: boolean }>
+    Array<{ id: LlmProviderId; label: string; default?: boolean }>
   >([]);
-  const [selected, setSelectedState] = useState<"anthropic" | "deepseek" | "">(
-    ""
-  );
+  const [selected, setSelectedState] = useState<LlmProviderId | "">("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -19,10 +18,7 @@ export function useLlmProvider(projectId: string) {
       .listLlmProviders()
       .then((res) => {
         setProviders(res.data);
-        const stored = localStorage.getItem(STORAGE_KEY) as
-          | "anthropic"
-          | "deepseek"
-          | null;
+        const stored = localStorage.getItem(STORAGE_KEY) as LlmProviderId | null;
         const valid =
           stored && res.data.some((p) => p.id === stored)
             ? stored
@@ -33,7 +29,7 @@ export function useLlmProvider(projectId: string) {
       .finally(() => setLoading(false));
   }, [projectId]);
 
-  const setSelected = useCallback((id: "anthropic" | "deepseek") => {
+  const setSelected = useCallback((id: LlmProviderId) => {
     setSelectedState(id);
     localStorage.setItem(STORAGE_KEY, id);
   }, []);

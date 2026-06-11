@@ -159,6 +159,23 @@ export function GitHubExportPanel({
     }
   };
 
+  const handleCreatePr = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api.createGithubPullRequest(projectId, {
+        title: "Nebula workspace changes",
+      });
+      window.open(res.data.pullRequestUrl, "_blank", "noopener,noreferrer");
+      await refresh();
+    } catch (err) {
+      const apiErr = err as { error?: { message?: string } };
+      setError(apiErr.error?.message ?? "Failed to open pull request");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (loading) {
     return <span className="text-xs text-gray-500">GitHub...</span>;
   }
@@ -331,6 +348,17 @@ export function GitHubExportPanel({
                       disabled={busy}
                     >
                       Sync Changes
+                    </Button>
+                  )}
+                  {status.repository && projectStatus === "ready" && (
+                    <Button
+                      variant="ghost"
+                      className="px-2 py-1 text-xs"
+                      onClick={handleCreatePr}
+                      loading={busy}
+                      disabled={busy}
+                    >
+                      Open PR
                     </Button>
                   )}
                   {status.repository && (

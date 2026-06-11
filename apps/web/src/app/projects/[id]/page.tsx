@@ -24,6 +24,11 @@ import type {
 } from "@/components/workspace/shell/types";
 import { SseEvents } from "@nebula/shared";
 import { FileSearchPalette } from "@/components/workspace/FileSearchPalette";
+import { TerminalPanel } from "@/components/workspace/TerminalPanel";
+import {
+  ChangesetReviewPanel,
+  type ProposedChange,
+} from "@/components/workspace/ChangesetReviewPanel";
 import { setLastProjectId } from "@/lib/workspace-entry";
 
 export default function ProjectWorkspacePage({
@@ -48,6 +53,8 @@ export default function ProjectWorkspacePage({
   const [editorTabs, setEditorTabs] = useState<EditorTab[]>([]);
   const [fileRefreshKey, setFileRefreshKey] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [changesetOpen, setChangesetOpen] = useState(false);
+  const [changesetFiles, setChangesetFiles] = useState<ProposedChange[]>([]);
   const { events, connected } = useSSE(projectId);
   const fileRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -71,6 +78,8 @@ export default function ProjectWorkspacePage({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest(".monaco-editor")) return;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setSearchOpen(true);
@@ -79,6 +88,15 @@ export default function ProjectWorkspacePage({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  useEffect(() => {
+    void api.getChangeset(projectId).then((res) => {
+      if (res.pending && res.files.length > 0) {
+        setChangesetFiles(res.files);
+        setChangesetOpen(true);
+      }
+    });
+  }, [projectId]);
 
   useEffect(() => {
     setProjectLoading(true);
@@ -173,6 +191,23 @@ export default function ProjectWorkspacePage({
         if (selectedPath === path) setSelectedPath(null);
       }
     }
+
+    if (last.type === SseEvents.CHANGESET_PROPOSED) {
+      const files = (last.data as { files?: ProposedChange[] }).files ?? [];
+      if (files.length > 0) {
+        setChangesetFiles(files);
+        setChangesetOpen(true);
+      }
+    }
+
+    if (
+      last.type === SseEvents.CHANGESET_APPLIED ||
+      last.type === SseEvents.CHANGESET_DISCARDED
+    ) {
+      setChangesetOpen(false);
+      setChangesetFiles([]);
+      refreshFiles();
+    }
   }, [
     events,
     scheduleFileRefresh,
@@ -199,6 +234,7 @@ export default function ProjectWorkspacePage({
           projectId={projectId}
           projectName={projectName}
           projectStatus={projectStatus}
+          sseEvents={events}
           onDeploy={() => setDeployOpen(true)}
           onDomains={() => setView("domains")}
           actions={
@@ -231,6 +267,10 @@ export default function ProjectWorkspacePage({
             view={view}
             projectId={projectId}
             workspaceId={project?.workspaceId ?? null}
+            onOpenFile={(path) => {
+              setView("agent");
+              void openFile(path);
+            }}
             agent={
               <WorkspaceAgentPanel
                 preview={
@@ -261,6 +301,14 @@ export default function ProjectWorkspacePage({
                           onTabsChange={setEditorTabs}
                           onActivePathChange={setSelectedPath}
                           onFileSaved={refreshFiles}
+                          onOpenFile={(path) => void openFile(path)}
+                          pendingChanges={changesetFiles}
+                          onPendingResolved={(path) => {
+                            setChangesetFiles((prev) =>
+                              prev.filter((f) => f.path !== path)
+                            );
+                            refreshFiles();
+                          }}
                         />
                       ) : (
                         <div className="grid h-full place-items-center text-sm text-muted-foreground">
@@ -269,6 +317,9 @@ export default function ProjectWorkspacePage({
                       )}
                     </section>
                   </div>
+                }
+                terminal={
+                  <TerminalPanel projectId={projectId} sseEvents={events} />
                 }
               />
             }
@@ -294,6 +345,18 @@ export default function ProjectWorkspacePage({
           void openFile(path);
         }}
       />
+
+      {changesetOpen && changesetFiles.length > 0 ? (
+        <ChangesetReviewPanel
+          projectId={projectId}
+          files={changesetFiles}
+          onClose={() => setChangesetOpen(false)}
+          onApplied={() => {
+            refreshFiles();
+            setChangesetFiles([]);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

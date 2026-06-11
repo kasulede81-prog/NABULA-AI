@@ -1,20 +1,22 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { Code2, Eye } from "lucide-react";
+import { Code2, Eye, Terminal } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type AgentTab = "preview" | "code";
+type AgentTab = "preview" | "code" | "terminal";
 
 interface WorkspaceAgentPanelProps {
   preview: ReactNode;
   code: ReactNode;
+  terminal: ReactNode;
   defaultTab?: AgentTab;
 }
 
 export function WorkspaceAgentPanel({
   preview,
   code,
+  terminal,
   defaultTab = "preview",
 }: WorkspaceAgentPanelProps) {
   const [tab, setTab] = useState<AgentTab>(defaultTab);
@@ -35,10 +37,16 @@ export function WorkspaceAgentPanel({
             icon={Code2}
             label="Code"
           />
+          <TabBtn
+            active={tab === "terminal"}
+            onClick={() => setTab("terminal")}
+            icon={Terminal}
+            label="Terminal"
+          />
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
-        {tab === "preview" ? preview : code}
+        {tab === "preview" ? preview : tab === "code" ? code : terminal}
       </div>
     </div>
   );
